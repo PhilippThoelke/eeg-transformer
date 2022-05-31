@@ -118,24 +118,24 @@ if __name__ == "__main__":
     parser.add_argument(
         "--epoch-length",
         type=int,
-        default=5120,
+        default=320,
         help="number of samples in each epoch",
     )
     parser.add_argument(
-        "--num-channels",
+        "--num-channels in the raw EEG",
         type=int,
-        default=20,
+        default=64,
         help="number of channels",
     )
     parser.add_argument(
         "--learning-rate",
-        default=5e-4,
+        default=5e-3,
         type=float,
         help="base learning rate",
     )
     parser.add_argument(
         "--early-stopping-patience",
-        default=50,
+        default=100,
         type=int,
         help="number of epochs to continue training if val loss doesn't improve anymore",
     )
@@ -153,9 +153,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--num-tokens",
-        default=20,
+        default=4,
         type=int,
-        help="number of temporal tokens the 20s EEG is split into",
+        help="number of temporal tokens the EEG is split into",
     )
     parser.add_argument(
         "--embedding-dim",
@@ -177,13 +177,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--dropout",
-        default=0.1,
+        default=0.3,
         type=float,
         help="dropout ratio",
     )
     parser.add_argument(
         "--token-dropout",
-        default=0,
+        default=0.1,
         type=float,
         help="dropout ratio for entire tokens",
     )
@@ -202,7 +202,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--warmup-steps",
-        default=5000,
+        default=500,
         type=int,
         help="number of steps for lr warmup",
     )
@@ -259,7 +259,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--standardize",
-        default=False,
+        default=True,
         type=bool,
         help="whether to standardize the data using a global mean and std",
     )
