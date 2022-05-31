@@ -122,10 +122,10 @@ if __name__ == "__main__":
         help="number of samples in each epoch",
     )
     parser.add_argument(
-        "--num-channels in the raw EEG",
+        "--num-channels",
         type=int,
         required=True,
-        help="number of channels",
+        help="number of channels in the raw EEG",
     )
     parser.add_argument(
         "--learning-rate",
