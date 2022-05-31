@@ -7,7 +7,7 @@ from mne.datasets import eegbci
 
 
 # path to directory where the resulting dataset files will be stored
-result_dir = "transformer/data/"
+result_dir = "data/"
 # which tasks should be extracted from the dataset, can be "all" or a list of multiple:
 # baseline-eyes, fist-motion, fist-imagination, fist_feet-motion, fist_feet-imagination
 target_type = "all"
