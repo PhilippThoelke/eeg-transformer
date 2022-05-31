@@ -26,3 +26,4 @@ To train on the dataset described in the dataset section, it would be enough to 
 ```bash
 python src/train.py --data-path path/to/raw-dataset.dat --label-path path/to/label-dataset.csv --epoch-length 320 --num-channels 64 --conditions eyes-open eyes-closed --ignore-channels 42 43 63 --sample-rate 160 --low-pass 30
 ```
+Training progress is logged in a directory called `lightning_logs`, which contains subdirectories for individual training runs. Each run contains an `hparams.yaml` file with a list of hyperparameters, a `splits.pt` file containing indices of the training and validation set, an `events.out.tfevens.*` file with Tensorboard compatible training metrics and a `checkpoints` directory with model checkpoints. You can view the training progress visually by running `tensorboard --logdir lightning_logs/`. After running this you can access a graphical view of the training progress by accessing `localhost:6006` in a webbrowser.
