@@ -8,9 +8,9 @@ from mne.datasets import eegbci
 
 # path to directory where the resulting dataset files will be stored
 result_dir = "transformer/data/"
-# which tasks should be extracted from the dataset, can be a list of multiple:
+# which tasks should be extracted from the dataset, can be "all" or a list of multiple:
 # baseline-eyes, fist-motion, fist-imagination, fist_feet-motion, fist_feet-imagination
-target_type = ["baseline-eyes"]
+target_type = "all"
 # if true, compute z-scores for each epoch individually
 normalize_epochs = False
 # length of one epoch in seconds
@@ -99,6 +99,15 @@ def extract_task(subjects, runs, epoch_duration, label_names):
 
 
 def extract_epochs(targets, subjects=range(1, 110), epoch_duration=5):
+    if target_type == "all":
+        target_type = [
+            "baseline-eyes",
+            "fist-motion",
+            "fist-imagination",
+            "fist_feet-motion",
+            "fist_feet-imagination",
+        ]
+
     if isinstance(targets, str):
         targets = [targets]
 
@@ -113,28 +122,28 @@ def extract_epochs(targets, subjects=range(1, 110), epoch_duration=5):
                 subjects=subjects,
                 runs=[3, 7, 11],
                 epoch_duration=epoch_duration,
-                label_names=["left-fist", "right-fist"],
+                label_names=["left-fist-move", "right-fist-move"],
             )
         elif target == "fist-imagination":
             ep, subj, lab = extract_task(
                 subjects=subjects,
                 runs=[4, 8, 12],
                 epoch_duration=epoch_duration,
-                label_names=["left-fist", "right-fist"],
+                label_names=["left-fist-imag", "right-fist-imag"],
             )
         elif target == "fist_feet-motion":
             ep, subj, lab = extract_task(
                 subjects=subjects,
                 runs=[5, 9, 13],
                 epoch_duration=epoch_duration,
-                label_names=["fists", "feet"],
+                label_names=["fists-move", "feet-move"],
             )
         elif target == "fist_feet-imagination":
             ep, subj, lab = extract_task(
                 subjects=subjects,
                 runs=[6, 10, 14],
                 epoch_duration=epoch_duration,
-                label_names=["fists", "feet"],
+                label_names=["fists-imag", "feet-imag"],
             )
         else:
             raise ValueError(f"Unrecognized target {target}")
@@ -150,7 +159,13 @@ epochs, subject_labels, labels = extract_epochs(
 )
 
 shape = len(epochs), epochs[0].shape[1], epochs[0].shape[0]
-fname = f"nsamp_{shape[0]}-eplen_{shape[1]}{'-norm' if normalize_epochs else ''}-example_{'-'.join(target_type)}"
+fname = (
+    f"nsamp_{shape[0]}-"
+    f"eplen_{shape[1]}"
+    f"{'-norm' if normalize_epochs else ''}-"
+    f"example_{'-'.join(target_type)}"
+)
+
 print("\nSaving raw data...", end="")
 file = np.memmap(
     join(result_dir, "raw-" + fname + ".dat"), mode="w+", dtype=np.float32, shape=shape
