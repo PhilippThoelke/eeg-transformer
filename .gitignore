@@ -130,3 +130,6 @@ dmypy.json
 
 # logdir
 lightning_logs/
+
+# figures dir
+figures/
