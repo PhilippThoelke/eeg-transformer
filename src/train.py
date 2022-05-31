@@ -189,7 +189,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--weight-decay",
-        default=0.01,
+        default=0.1,
         type=float,
         help="weight decay",
     )
