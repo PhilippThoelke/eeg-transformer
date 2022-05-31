@@ -118,13 +118,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--epoch-length",
         type=int,
-        default=320,
+        required=True,
         help="number of samples in each epoch",
     )
     parser.add_argument(
         "--num-channels in the raw EEG",
         type=int,
-        default=64,
+        required=True,
         help="number of channels",
     )
     parser.add_argument(
