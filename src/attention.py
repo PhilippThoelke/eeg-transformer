@@ -58,7 +58,7 @@ def rollout(attn, head_fuse="max", only_class=False):
     return result
 
 
-def main(model_dir, data_dir, data_name):
+def main(model_dir, data_path, label_path):
     # load model checkpoint
     model_path = glob.glob(join(model_dir, "checkpoints", "*"))
     if len(model_path) > 1:
@@ -68,8 +68,8 @@ def main(model_dir, data_dir, data_name):
 
     # load dataset
     data = RawDataset(
-        join(data_dir, f"raw-{data_name}.dat"),
-        join(data_dir, f"label-{data_name}.csv"),
+        data_path,
+        label_path,
         epoch_length=model.hparams.epoch_length,
         nchannels=model.hparams.num_channels,
         low_pass=model.hparams.low_pass,
@@ -131,6 +131,8 @@ def main(model_dir, data_dir, data_name):
 
 
 if __name__ == "__main__":
+    import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--model-dir",
@@ -139,17 +141,17 @@ if __name__ == "__main__":
         help="path to the model checkpoint's log directory",
     )
     parser.add_argument(
-        "--data-dir",
+        "--data-path",
         type=str,
         required=True,
-        help="path to the dataset files",
+        help="path to the memory mapped dataset file",
     )
     parser.add_argument(
-        "--data-name",
+        "--label-path",
         type=str,
         required=True,
-        help="name of the dataset (between 'raw/label-' and '.dat/.csv')",
+        help="path to the label CSV file",
     )
     args = parser.parse_args()
 
-    main(args.model_dir, args.data_dir, args.data_name)
+    main(args.model_dir, args.data_path, args.label_path)
