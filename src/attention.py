@@ -1,4 +1,4 @@
-import argparse
+import warnings
 from os.path import join
 import glob
 from functools import partial
@@ -60,8 +60,10 @@ def rollout(attn, head_fuse="max", only_class=False):
 
 def main(model_dir, data_dir, data_name):
     # load model checkpoint
-    model_path = glob.glob(join(model_dir, "checkpoints", "*"))[0]
-    model = TransformerModule.load_from_checkpoint(model_path)
+    model_path = glob.glob(join(model_dir, "checkpoints", "*"))
+    if len(model_path) > 1:
+        warnings.warn(f"Found multiple model checkpoints, choosing {model_path[0]}.")
+    model = TransformerModule.load_from_checkpoint(model_path[0])
     model.eval().freeze()
 
     # load dataset
