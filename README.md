@@ -64,3 +64,9 @@ attention = torch.load("path/to/attention.pt")
 attn, confidence, pred, labels, stages, subjects, hparams, condition_mapping, stage_mapping, subject_mapping = attention
 ```
 The attention weights can be visualized in the form of topomaps and interactive 3D plots using the [`notebooks/AttentionFigures.ipynb`](https://github.com/PhilippThoelke/eeg-transformer/blob/main/notebooks/AttentionFigures.ipynb) notebook. Simply adjust the `model_dir` variable at the top to point towards your model's log dir or a directory containing the log directories of multiple models.
+
+## Examples figures
+### Visualization of attention weights in the form of topomaps (attention directed at the class token):
+![attn-bands-1](https://user-images.githubusercontent.com/36135990/171483279-130337c0-a7dd-4723-a70c-fafd9d2132d0.png)
+### Three dimensional visualization of attention weights between EEG channels (eyes closed condition):
+![eyes-closed-3d-1](https://user-images.githubusercontent.com/36135990/171483302-6fed84e8-8974-4552-9316-366249cfd575.png)
