@@ -2,13 +2,13 @@
 A Transformer architecture for classification of raw EEG signals, including several visualizations of attention weights.
 
 ## Installation
-Clone this repository and install the dependencies in your Python environment.
+Clone this repository and install the dependencies in your Python environment of choice.
 
 For example:
 ```bash
 git clone git@github.com:PhilippThoelke/eeg-transformer.git
 cd eeg-transformer
-pip install requirements.txt
+pip install -r requirements.txt
 ```
 
 ## Dataset
