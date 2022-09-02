@@ -1,7 +1,7 @@
 # Analysis of Transformer attention in EEG signal classification
 A Transformer architecture for classification of raw EEG signals, including several visualizations of attention weights.
 
-This work was published at the Conference on Cognitive Computational Neuroscience 2022: [https://doi.org/10.32470/CCN.2022.1240-0](https://doi.org/10.32470/CCN.2022.1240-0)
+This work was presented at the Conference on Cognitive Computational Neuroscience 2022: [https://doi.org/10.32470/CCN.2022.1240-0](https://doi.org/10.32470/CCN.2022.1240-0)
 
 ## Installation
 Clone this repository and install the dependencies in your Python environment of choice.
