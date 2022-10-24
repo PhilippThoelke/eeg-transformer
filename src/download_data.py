@@ -24,7 +24,7 @@ def extract_baseline_eyes(subjects, runs, epoch_duration):
     run2label = {1: "eyes-open", 2: "eyes-closed"}
     for subject in subjects:
         for run in runs:
-            raw_fnames = eegbci.load_data(subject, run)
+            raw_fnames = eegbci.load_data(subject, run, update_path=False)
             raws = [read_raw_edf(f, preload=True) for f in raw_fnames]
             raw = concatenate_raws(raws)
             data = raw.get_data()
@@ -49,7 +49,7 @@ def extract_task(subjects, runs, epoch_duration, label_names):
     subject_labels = []
     labels = []
     for subject in subjects:
-        raw_fnames = eegbci.load_data(subject, runs)
+        raw_fnames = eegbci.load_data(subject, runs, update_path=False)
         raws = [read_raw_edf(f, preload=True) for f in raw_fnames]
         raw = concatenate_raws(raws)
         epoch_steps = int(epoch_duration * raw.info["sfreq"])
@@ -99,6 +99,8 @@ def extract_task(subjects, runs, epoch_duration, label_names):
 
 
 def extract_epochs(targets, subjects=range(1, 110), epoch_duration=5):
+    global target_type
+
     if target_type == "all":
         target_type = [
             "baseline-eyes",
