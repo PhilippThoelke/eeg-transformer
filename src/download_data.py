@@ -99,10 +99,8 @@ def extract_task(subjects, runs, epoch_duration, label_names):
 
 
 def extract_epochs(targets, subjects=range(1, 110), epoch_duration=5):
-    global target_type
-
-    if target_type == "all":
-        target_type = [
+    if targets == "all":
+        targets = [
             "baseline-eyes",
             "fist-motion",
             "fist-imagination",
