@@ -138,7 +138,7 @@ if __name__ == "__main__":
         "--model-dir",
         type=str,
         required=True,
-        help="path to the model checkpoint's log directory",
+        help="path to the model checkpoint's log directory (can be glob string)",
     )
     parser.add_argument(
         "--data-path",
@@ -154,4 +154,11 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    main(args.model_dir, args.data_path, args.label_path)
+    if "*" in args.model_dir:
+        model_dirs = glob.glob(args.model_dir)
+        print(f"found {len(model_dirs)} matching models")
+        for model_dir in model_dirs:
+            print(f"\nloading {model_dir}")
+            main(model_dir, args.data_path, args.label_path)
+    else:
+        main(args.model_dir, args.data_path, args.label_path)
