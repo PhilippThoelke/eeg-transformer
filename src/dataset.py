@@ -68,6 +68,8 @@ class RawDataset(Dataset):
                 mask = mask | (label["stage"] == stage)
             label = label[mask]
         # potentially drop some conditions
+        if isinstance(conditions, list) and len(conditions) == 1:
+            conditions = conditions[0]
         if conditions != "all":
             if not isinstance(conditions, list):
                 conditions = [conditions]
