@@ -133,3 +133,6 @@ lightning_logs/
 
 # figures dir
 figures/
+
+# data dir
+data/
