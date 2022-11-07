@@ -162,6 +162,10 @@ class TransformerModule(pl.LightningModule):
             ax.imshow(cm)
             ax.set_xticks(range(len(conditions)), conditions, rotation=90)
             ax.set_yticks(range(len(conditions)), conditions)
+            ax.set_xlabel("prediction")
+            ax.set_ylabel("ground truth")
+            ax.xaxis.set_label_position("top")
+            ax.yaxis.set_label_position("right")
             fig.tight_layout()
 
             self.logger.experiment.add_figure(f"{stage}_cm", fig)
