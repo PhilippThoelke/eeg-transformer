@@ -4,6 +4,7 @@ from torch import nn, optim
 import torch.nn.functional as F
 import pytorch_lightning as pl
 from sklearn.metrics import confusion_matrix
+from matplotlib import pyplot as plt
 
 
 class TransformerModule(pl.LightningModule):
@@ -119,7 +120,11 @@ class TransformerModule(pl.LightningModule):
         self.log(f"{training_stage}_acc", acc)
 
         # accumulate confusion matrices
-        cm = confusion_matrix(condition.cpu(), logits.argmax(dim=-1).cpu())
+        cm = confusion_matrix(
+            condition.cpu(),
+            logits.argmax(dim=-1).cpu(),
+            labels=range(len(self.hparams.conditions)),
+        )
         if training_stage not in self.confusion_matrices:
             self.confusion_matrices[training_stage] = cm
         else:
@@ -151,7 +156,15 @@ class TransformerModule(pl.LightningModule):
     def validation_epoch_end(self, outputs):
         for stage, cm in self.confusion_matrices.items():
             cm = cm / cm.sum()
-            self.logger.experiment.add_image(f"{stage}_cm", cm, dataformats="HW")
+
+            conditions = self.hparams.conditions
+            fig, ax = plt.subplots()
+            ax.imshow(cm)
+            ax.set_xticks(range(len(conditions)), conditions, rotation=90)
+            ax.set_yticks(range(len(conditions)), conditions)
+            fig.tight_layout()
+
+            self.logger.experiment.add_figure(f"{stage}_cm", fig)
         self.confusion_matrices = {}
 
     def optimizer_step(self, *args, **kwargs):
