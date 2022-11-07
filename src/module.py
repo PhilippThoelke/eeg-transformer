@@ -1,4 +1,5 @@
 import math
+import numpy as np
 import torch
 from torch import nn, optim
 import torch.nn.functional as F
@@ -155,8 +156,11 @@ class TransformerModule(pl.LightningModule):
 
     def validation_epoch_end(self, outputs):
         for stage, cm in self.confusion_matrices.items():
-            cm = cm / cm.sum()
+            # normalize confusion matrix
+            counts = cm.sum(axis=1, keepdims=True)
+            cm = cm / np.where(counts, counts, 1)
 
+            # create confusion matrix plot
             conditions = self.hparams.conditions
             fig, ax = plt.subplots()
             ax.imshow(cm)
@@ -168,6 +172,7 @@ class TransformerModule(pl.LightningModule):
             ax.yaxis.set_label_position("right")
             fig.tight_layout()
 
+            # log the confusion matrix
             self.logger.experiment.add_figure(f"{stage}_cm", fig)
         self.confusion_matrices = {}
 
