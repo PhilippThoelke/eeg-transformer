@@ -119,7 +119,7 @@ class TransformerModule(pl.LightningModule):
         self.log(f"{training_stage}_acc", acc)
 
         # accumulate confusion matrices
-        cm = confusion_matrix(condition, logits.argmax(dim=-1))
+        cm = confusion_matrix(condition.cpu(), logits.argmax(dim=-1).cpu())
         if training_stage not in self.confusion_matrices:
             self.confusion_matrices[training_stage] = cm
         else:
