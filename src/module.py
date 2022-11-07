@@ -3,6 +3,7 @@ import torch
 from torch import nn, optim
 import torch.nn.functional as F
 import pytorch_lightning as pl
+from sklearn.metrics import confusion_matrix
 
 
 class TransformerModule(pl.LightningModule):
@@ -40,6 +41,8 @@ class TransformerModule(pl.LightningModule):
             nn.ReLU(),
             nn.Linear(64, len(self.hparams.conditions)),
         )
+
+        self.confusion_matrices = {}
 
     def forward(self, x, return_logits=False):
         # add a batch dimension if required
@@ -114,6 +117,14 @@ class TransformerModule(pl.LightningModule):
         # accuracy
         acc = (logits.argmax(dim=-1) == condition).float().mean()
         self.log(f"{training_stage}_acc", acc)
+
+        # accumulate confusion matrices
+        cm = confusion_matrix(condition, logits.argmax(dim=-1))
+        if training_stage not in self.confusion_matrices:
+            self.confusion_matrices[training_stage] = cm
+        else:
+            self.confusion_matrices[training_stage] += cm
+
         return loss
 
     def configure_optimizers(self):
@@ -125,9 +136,7 @@ class TransformerModule(pl.LightningModule):
         )
         # learning rate scheduler
         opt.param_groups[0]["initial_lr"] = self.hparams.learning_rate
-        scheduler = optim.lr_scheduler.ExponentialLR(
-            opt, gamma=0.995, last_epoch=30
-        )
+        scheduler = optim.lr_scheduler.ExponentialLR(opt, gamma=0.995, last_epoch=30)
         return dict(optimizer=opt, lr_scheduler=scheduler, monitor="train_loss")
 
     def training_epoch_end(self, *args, **kwargs):
@@ -138,6 +147,12 @@ class TransformerModule(pl.LightningModule):
         for i, opt in enumerate(optimizers):
             name = "lr" if len(optimizers) == 1 else f"lr_{i}"
             self.log(name, opt.param_groups[0]["lr"])
+
+    def validation_epoch_end(self, outputs):
+        for stage, cm in self.confusion_matrices.items():
+            cm = cm / cm.sum()
+            self.logger.experiment.add_image(f"{stage}_cm", cm, dataformats="HW")
+        self.confusion_matrices = {}
 
     def optimizer_step(self, *args, **kwargs):
         # learning rate warmup
