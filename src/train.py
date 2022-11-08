@@ -194,6 +194,12 @@ if __name__ == "__main__":
         help="weight decay",
     )
     parser.add_argument(
+        "--noise-scale",
+        default=0.2,
+        type=float,
+        help="scale of noise regularization",
+    )
+    parser.add_argument(
         "--shuffle-tokens",
         default="none",
         type=str,
