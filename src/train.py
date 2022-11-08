@@ -141,7 +141,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--batch-size",
-        default=32,
+        default=64,
         type=int,
         help="batch size",
     )
@@ -153,19 +153,19 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--num-tokens",
-        default=4,
+        default=1,
         type=int,
         help="number of temporal tokens the EEG is split into",
     )
     parser.add_argument(
         "--embedding-dim",
-        default=64,
+        default=128,
         type=int,
         help="dimension of tokens inside the transformer",
     )
     parser.add_argument(
         "--num-layers",
-        default=3,
+        default=5,
         type=int,
         help="number of encoder layers in the transformer",
     )
@@ -177,7 +177,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--dropout",
-        default=0.3,
+        default=0.0,
         type=float,
         help="dropout ratio",
     )
@@ -189,7 +189,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--weight-decay",
-        default=0.1,
+        default=0.3,
         type=float,
         help="weight decay",
     )
@@ -208,7 +208,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--warmup-steps",
-        default=500,
+        default=1000,
         type=int,
         help="number of steps for lr warmup",
     )
