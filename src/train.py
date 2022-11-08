@@ -27,7 +27,6 @@ def main(args):
         args.label_path,
         args.epoch_length,
         args.num_channels,
-        stages=args.stages,
         conditions=args.conditions,
         sample_rate=args.sample_rate,
         notch_freq=args.notch_freq,
@@ -36,9 +35,8 @@ def main(args):
     )
     idx_train, idx_val = split_data(data, args.val_subject_ratio)
 
-    # make sure args contains a list of conditions and stages, not "all"
+    # make sure args contains a list of conditions, not "all"
     args.conditions = data.condition_mapping.tolist()
-    args.stages = data.stage_mapping.tolist()
 
     # train subset
     train_data = Subset(data, idx_train)
@@ -248,13 +246,6 @@ if __name__ == "__main__":
         type=int,
         help="list of channel indices to ignore",
         nargs="+",
-    )
-    parser.add_argument(
-        "--stages",
-        type=str,
-        default="all",
-        nargs="+",
-        help="list of stages to use",
     )
     parser.add_argument(
         "--conditions",

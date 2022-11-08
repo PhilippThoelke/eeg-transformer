@@ -63,7 +63,7 @@ The resulting `token_attn` tensor will have the shape batch-size x num-tokens x 
 The [`src/attention.py`](https://github.com/PhilippThoelke/eeg-transformer/blob/main/src/attention.py) script can also be used from the command line. For a list of arguments run `python src/attention.py --help`. When run from the command line, the script will extract the attention matrices from the validation set of the specified dataset and store attention, as well as some other useful metrics, in a file called `attention.pt` in the model's log directory. You can load this file using
 ```python
 attention = torch.load("path/to/attention.pt")
-attn, confidence, pred, labels, stages, subjects, hparams, condition_mapping, stage_mapping, subject_mapping = attention
+attn, confidence, pred, labels, subjects, hparams, condition_mapping, subject_mapping = attention
 ```
 The attention weights can be visualized in the form of topomaps and interactive 3D plots using the [`notebooks/AttentionFigures.ipynb`](https://github.com/PhilippThoelke/eeg-transformer/blob/main/notebooks/AttentionFigures.ipynb) notebook. Simply adjust the `model_dir` variable at the top to point towards your model's log dir or a directory containing the log directories of multiple models.
 

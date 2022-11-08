@@ -76,7 +76,6 @@ def main(model_dir, data_path, label_path):
         high_pass=model.hparams.high_pass,
         notch_freq=model.hparams.notch_freq,
         sample_rate=model.hparams.sample_rate,
-        stages=model.hparams.stages,
         conditions=model.hparams.conditions,
     )
     splits = torch.load(join(model_dir, "splits.pt"))["val_idx"]
@@ -85,9 +84,9 @@ def main(model_dir, data_path, label_path):
 
     # iterate over the dataset
     acc = 0
-    attn, predictions, labels, stages, subjects, confidences = [], [], [], [], [], []
+    attn, predictions, labels, subjects, confidences = [], [], [], [], [], []
     prog = tqdm(dl, desc="extracting attention weights")
-    for i, (x, y, stage, subj) in enumerate(prog):
+    for i, (x, y, subj) in enumerate(prog):
         # extract attention weights
         with Attention(model) as a:
             pred = model(x)
@@ -97,7 +96,6 @@ def main(model_dir, data_path, label_path):
         labels.append(y)
         predictions.append(pred.argmax(dim=-1))
         confidences.append(pred.max(dim=-1).values)
-        stages.append(stage)
         subjects.append(subj)
 
         # compute batchwise accuracy
@@ -110,7 +108,6 @@ def main(model_dir, data_path, label_path):
     labels = torch.cat(labels)
     predictions = torch.cat(predictions)
     confidences = torch.cat(confidences)
-    stages = torch.cat(stages)
     subjects = torch.cat(subjects)
 
     torch.save(
@@ -119,11 +116,9 @@ def main(model_dir, data_path, label_path):
             confidences,
             predictions,
             labels,
-            stages,
             subjects,
             model.hparams,
             data.dataset.condition_mapping,
-            data.dataset.stage_mapping,
             data.dataset.subject_mapping,
         ),
         join(model_dir, "attention.pt"),

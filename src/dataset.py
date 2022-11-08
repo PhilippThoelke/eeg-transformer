@@ -14,7 +14,6 @@ class RawDataset(Dataset):
         label_file,
         epoch_length,
         nchannels,
-        stages="all",
         conditions="all",
         sample_rate=None,
         notch_freq=None,
@@ -59,14 +58,6 @@ class RawDataset(Dataset):
             f"and label file ({self.data.shape[0]} and {label.shape[0]})"
         )
 
-        # extract indices of samples with the correct stage
-        if stages != "all":
-            if not isinstance(stages, list):
-                stages = [stages]
-            mask = np.zeros(label.shape[0], dtype=bool)
-            for stage in stages:
-                mask = mask | (label["stage"] == stage)
-            label = label[mask]
         # potentially drop some conditions
         if isinstance(conditions, list) and len(conditions) == 1:
             conditions = conditions[0]
@@ -81,9 +72,8 @@ class RawDataset(Dataset):
         # save indices of sample with select channels and conditions
         self.indices = label.index.values
 
-        # create unique indices and mappings for subjects, stages and conditions
+        # create unique indices and mappings for subjects and conditions
         self.subject_ids, self.subject_mapping = label["subject"].factorize()
-        self.stage_ids, self.stage_mapping = label["stage"].factorize()
         self.condition_ids, self.condition_mapping = label["condition"].factorize()
 
     def class_weights(self, indices=None):
@@ -129,17 +119,12 @@ class RawDataset(Dataset):
         return (
             torch.from_numpy(x.astype(np.float32)),
             self.condition_ids[idx],
-            self.stage_ids[idx],
             self.subject_ids[idx],
         )
 
     def id2subject(self, subject_id):
         # mapping from index to subject identifier
         return self.subject_mapping[subject_id]
-
-    def id2stage(self, stage_id):
-        # mapping from index to stage identifier
-        return self.stage_mapping[stage_id]
 
     def id2condition(self, condition_id):
         # mapping from index to condition identifier

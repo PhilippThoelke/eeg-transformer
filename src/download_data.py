@@ -172,14 +172,14 @@ file = np.memmap(
 )
 meta_info = pd.DataFrame(
     index=np.arange(shape[0], dtype=int),
-    columns=["subject", "stage", "condition"],
+    columns=["subject", "condition"],
     dtype=str,
 )
 
 for i in range(shape[0]):
     file[i] = epochs[i].T
     file.flush()
-    meta_info.iloc[i] = [subject_labels[i], -1, labels[i]]
+    meta_info.iloc[i] = [subject_labels[i], labels[i]]
 print("done")
 
 print("Saving metadata...", end="")

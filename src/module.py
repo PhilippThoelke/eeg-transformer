@@ -109,7 +109,7 @@ class TransformerModule(pl.LightningModule):
         return self.step(batch, batch_idx, training_stage="test")
 
     def step(self, batch, batch_idx, training_stage):
-        x, condition, stage, subject = batch
+        x, condition, subject = batch
 
         if training_stage == "train":
             x = x + torch.randn_like(x) * x.std() * self.hparams.noise_scale
