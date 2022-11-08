@@ -110,6 +110,10 @@ class TransformerModule(pl.LightningModule):
 
     def step(self, batch, batch_idx, training_stage):
         x, condition, stage, subject = batch
+
+        if training_stage == "train":
+            x = x + torch.randn_like(x) * x.std() * self.hparams.noise_scale
+
         logits = self(x, return_logits=True)
 
         # loss
