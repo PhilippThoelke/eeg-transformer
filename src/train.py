@@ -1,7 +1,6 @@
 import argparse
 from functools import reduce
 from os import makedirs, path
-from tqdm import tqdm
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Subset
@@ -11,28 +10,28 @@ from module import TransformerModule
 
 
 def split_data(data, val_subject_ratio):
-    # split the data by subjects
-    unique_subject_ids = np.unique(data.subject_ids)
-    num_val_subjects = int(len(unique_subject_ids) * val_subject_ratio)
-    subject_idxs = np.random.choice(unique_subject_ids, num_val_subjects, replace=False)
-    val_mask = reduce(np.bitwise_or, [data.subject_ids == i for i in subject_idxs])
-    # return train/val indices
-    return np.where(~val_mask)[0], np.where(val_mask)[0]
+    dataset_names = set([name.split("-")[0] for name in data.subject_mapping])
+
+    # iterate over all datasets
+    train_idxs, val_idxs = [], []
+    for name in dataset_names:
+        dset_mask = data.subject_mapping.str.startswith(name)[data.subject_ids]
+        subj_ids = data.subject_ids[dset_mask]
+
+        # split the data by subjects
+        unique_subj_ids = np.unique(subj_ids)
+        num_val_subjs = max(int(len(unique_subj_ids) * val_subject_ratio), 1)
+        val_subjs = np.random.choice(unique_subj_ids, num_val_subjs, replace=False)
+        val_mask = reduce(np.bitwise_or, [data.subject_ids == i for i in val_subjs])
+        # get train/val indices
+        train_idxs.append(np.where(~val_mask & dset_mask)[0])
+        val_idxs.append(np.where(val_mask)[0])
+    return np.concatenate(train_idxs), np.concatenate(val_idxs)
 
 
 def main(args):
     # load data
-    data = RawDataset(
-        args.data_path,
-        args.label_path,
-        args.epoch_length,
-        args.num_channels,
-        conditions=args.conditions,
-        sample_rate=args.sample_rate,
-        notch_freq=args.notch_freq,
-        low_pass=args.low_pass,
-        high_pass=args.high_pass,
-    )
+    data = RawDataset(args)
     idx_train, idx_val = split_data(data, args.val_subject_ratio)
 
     # make sure args contains a list of conditions, not "all"
@@ -49,6 +48,8 @@ def main(args):
     )
     # store training class weights for use inside the lightning module
     args.class_weights = data.class_weights(idx_train)
+    # store the size of a single token
+    args.token_size = train_data[0][0].shape[0]
 
     # val subset
     val_data = Subset(data, idx_val)
@@ -56,21 +57,8 @@ def main(args):
         val_data, batch_size=args.batch_size, num_workers=8, prefetch_factor=4
     )
 
-    # compute data mean and std
-    mean, std = 0, 1
-    if args.standardize:
-        result = [
-            (sample[0].mean(), sample[0].std())
-            for sample in tqdm(
-                DataLoader(train_data, batch_size=256, num_workers=4),
-                desc="extracting mean and standard deviation",
-            )
-        ]
-        means, stds = zip(*result)
-        mean, std = torch.tensor(means).mean(), torch.tensor(stds).mean()
-
     # define model
-    module = TransformerModule(args, mean, std)
+    module = TransformerModule(args)
 
     # define trainer instance
     trainer = pl.Trainer(
@@ -114,18 +102,6 @@ if __name__ == "__main__":
         help="path to the csv file containing labels",
     )
     parser.add_argument(
-        "--epoch-length",
-        type=int,
-        required=True,
-        help="number of samples in each epoch",
-    )
-    parser.add_argument(
-        "--num-channels",
-        type=int,
-        required=True,
-        help="number of channels in the raw EEG",
-    )
-    parser.add_argument(
         "--learning-rate",
         default=5e-3,
         type=float,
@@ -148,12 +124,6 @@ if __name__ == "__main__":
         default=0.15,
         type=float,
         help="ratio of subjects to be used for validation",
-    )
-    parser.add_argument(
-        "--num-tokens",
-        default=1,
-        type=int,
-        help="number of temporal tokens the EEG is split into",
     )
     parser.add_argument(
         "--embedding-dim",
@@ -198,13 +168,6 @@ if __name__ == "__main__":
         help="scale of noise regularization",
     )
     parser.add_argument(
-        "--shuffle-tokens",
-        default="none",
-        type=str,
-        choices=["none", "channels", "temporal", "all"],
-        help="type of random reordering of tokens",
-    )
-    parser.add_argument(
         "--warmup-steps",
         default=1000,
         type=int,
@@ -241,30 +204,11 @@ if __name__ == "__main__":
         help="frequency at which to apply a high pass filter",
     )
     parser.add_argument(
-        "--ignore-channels",
-        default=[],
-        type=int,
-        help="list of channel indices to ignore",
-        nargs="+",
-    )
-    parser.add_argument(
         "--conditions",
         default="all",
         type=str,
         help="list of conditions to use",
         nargs="+",
-    )
-    parser.add_argument(
-        "--standardize",
-        default=True,
-        type=bool,
-        help="whether to standardize the data using a global mean and std",
-    )
-    parser.add_argument(
-        "--used-data-length",
-        default=None,
-        type=int,
-        help="amount of samples to actually use from each epoch (default: use full epoch)",
     )
 
     args = parser.parse_args()

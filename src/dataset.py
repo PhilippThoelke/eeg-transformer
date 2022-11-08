@@ -1,6 +1,8 @@
-from os import path
+from os.path import exists
 import numpy as np
 import pandas as pd
+import pickle
+import codecs
 import torch
 from torch.utils.data import Dataset
 from mne.filter import notch_filter, filter_data
@@ -8,57 +10,54 @@ import warnings
 
 
 class RawDataset(Dataset):
-    def __init__(
-        self,
-        data_file,
-        label_file,
-        epoch_length,
-        nchannels,
-        conditions="all",
-        sample_rate=None,
-        notch_freq=None,
-        low_pass=None,
-        high_pass=None,
-    ):
-        if not path.exists(data_file):
-            raise FileNotFoundError(f"Data file was not found: {data_file}")
-        if not path.exists(label_file):
-            raise FileNotFoundError(f"Label file was not found: {label_file}")
+    def __init__(self, args=None, **kwargs):
+        if args is None:
+            args = kwargs
+        if not isinstance(args, dict):
+            args = args.__dict__
 
-        if notch_freq is not None or low_pass is not None or high_pass is not None:
-            assert sample_rate is not None, (
-                "sample rate must be specified to run a"
-                "notch, low pass or high pass filter"
+        self.data_path = args.get("data_path")
+        self.label_path = args.get("label_path")
+        self.sample_rate = args.get("sample_rate")
+        self.notch_freq = args.get("notch_freq")
+        self.low_pass = args.get("low_pass")
+        self.high_pass = args.get("high_pass")
+
+        if not exists(self.data_path):
+            raise FileNotFoundError(f"Data file not found: {self.data_path}")
+        if not exists(self.label_path):
+            raise FileNotFoundError(f"Label file not found: {self.label_path}")
+
+        if self.notch_freq or self.low_pass or self.high_pass:
+            assert self.sample_rate, (
+                "Sample rate must be specified to run a notch, "
+                "low pass or high pass filter"
             )
 
-        self.sample_rate = sample_rate
-        self.notch_freq = notch_freq
-        self.low_pass = low_pass
-        self.high_pass = high_pass
-        self.nchannels = nchannels
-        self.epoch_length = epoch_length
+        with open(self.label_path, "r") as f:
+            # parse shape information
+            header = next(f)
+            key, value = header.strip("#\n").split("=")
+            assert key == "shape"
+            data_shape = tuple(map(int, value.strip("()").split(", ")))
+
+            # load the labels
+            label = pd.read_csv(f, index_col=0, dtype=str)
 
         # memory map the raw data
-        name, nsamp = path.basename(data_file).split("-")[1].split("_")
-        assert (
-            name == "nsamp"
-        ), "The file name does not contain the number of samples in the expected position."
         self.data = np.memmap(
-            data_file,
-            mode="r",
-            dtype=np.float32,
-            shape=(int(nsamp), epoch_length, nchannels),
+            self.data_path, mode="r", dtype=np.float32, shape=data_shape
         )
-
-        # load the labels
-        label = pd.read_csv(label_file, index_col=0, dtype=str)
 
         assert self.data.shape[0] == label.shape[0], (
-            f"Number of samples does not match in the data "
-            f"and label file ({self.data.shape[0]} and {label.shape[0]})"
+            f"Sample count in the data ({self.data.shape[0]}) and "
+            f"label file ({label.shape[0]}) doesn't match"
         )
 
+        self.nchannels = data_shape[2]
+
         # potentially drop some conditions
+        conditions = args.get("conditions", "all")
         if isinstance(conditions, list) and len(conditions) == 1:
             conditions = conditions[0]
         if conditions != "all":
@@ -75,6 +74,12 @@ class RawDataset(Dataset):
         # create unique indices and mappings for subjects and conditions
         self.subject_ids, self.subject_mapping = label["subject"].factorize()
         self.condition_ids, self.condition_mapping = label["condition"].factorize()
+
+        # store channel positions
+        self.channel_positions = [
+            pickle.loads(codecs.decode(pkl.encode(), "base64"))
+            for pkl in label["channel_pos_pickle"].values
+        ]
 
     def class_weights(self, indices=None):
         classes = self.condition_ids
@@ -116,8 +121,21 @@ class RawDataset(Dataset):
                     verbose="warning",
                 ).T
 
+        # create the channel mask
+        channel_pos = torch.from_numpy(self.channel_positions[idx].astype(np.float32))
+        mask = torch.zeros(self.nchannels, dtype=bool)
+        mask[: channel_pos.size(0)] = True
+
+        # pad the channel positions tensor
+        channel_padding = self.nchannels - channel_pos.size(0)
+        if channel_padding > 0:
+            padding = torch.zeros(channel_padding, channel_pos.size(1))
+            channel_pos = torch.cat([channel_pos, padding], dim=0)
+
         return (
             torch.from_numpy(x.astype(np.float32)),
+            mask,
+            channel_pos,
             self.condition_ids[idx],
             self.subject_ids[idx],
         )
@@ -129,3 +147,13 @@ class RawDataset(Dataset):
     def id2condition(self, condition_id):
         # mapping from index to condition identifier
         return self.condition_mapping[condition_id]
+
+
+if __name__ == "__main__":
+    d = RawDataset(
+        data_path="data/raw-nsamp_15814-eplen_256-nchan_64.dat",
+        label_path="data/label-nsamp_15814-eplen_256-nchan_64.csv",
+        epoch_length=256,
+        num_channels=64,
+    )
+    s = d[0]

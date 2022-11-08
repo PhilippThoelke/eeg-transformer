@@ -1,3 +1,9 @@
+# TODO: Update README
+## SOME INFORMATION IN THIS README IS CURRENTLY DEPRECATED!
+
+---
+---
+
 # Analysis of Transformer attention in EEG signal classification
 A Transformer architecture for classification of raw EEG signals, including several visualizations of attention weights.
 
@@ -22,11 +28,11 @@ python src/download_data.py
 ```
 
 ## Training
-Training the model is started by running [`src/train.py`](https://github.com/PhilippThoelke/eeg-transformer/blob/main/src/train.py). There is a wide range of different hyperparameters you can choose from. Run `python src/train.py --help` to get a list of possible arguments and their descriptions. There are 4 required arguments, namely `--data-path`, `--label-path`, `--epoch-length` and `--num-channels`, which correspond to the paths to the memory mapped dataset and CSV label files, the number of steps per epoch and number of channels in the raw EEG respectively.
+Training the model is started by running [`src/train.py`](https://github.com/PhilippThoelke/eeg-transformer/blob/main/src/train.py). There is a wide range of different hyperparameters you can choose from. Run `python src/train.py --help` to get a list of possible arguments and their descriptions. There are 2 required arguments, namely `--data-path` and `--label-path`, which correspond to the paths to the memory mapped dataset and CSV label file.
 
-To train on the dataset described in the dataset section, it would be enough to specify only the 4 required arguments but be recommend excluding the three reference channels and low-pass filtering the data. To train on the eyes open vs eyes closed condition for example, run this command:
+To train on the dataset described in the dataset section, it would be enough to specify only the 2 required arguments, however, hyperparameter tuning can likely improve the final results. To train on the eyes open vs eyes closed condition for example, run this command:
 ```bash
-python src/train.py --data-path path/to/raw-dataset.dat --label-path path/to/label-dataset.csv --epoch-length 320 --num-channels 64 --conditions eyes-open eyes-closed --ignore-channels 42 43 63 --sample-rate 160 --low-pass 30
+python src/train.py --data-path path/to/raw-dataset.dat --label-path path/to/label-dataset.csv --conditions eyes-open eyes-closed --sample-rate 160 --low-pass 30
 ```
 Training progress is logged in a directory called `lightning_logs`, which contains subdirectories for individual training runs. Each run contains an `hparams.yaml` file with a list of hyperparameters, a `splits.pt` file containing indices of the training and validation set, an `events.out.tfevens.*` file with Tensorboard compatible training metrics and a `checkpoints` directory with model checkpoints. You can view the training progress visually by running `tensorboard --logdir lightning_logs/`. After running this you can access a graphical view of the training progress by accessing `localhost:6006` in a webbrowser.
 
@@ -36,7 +42,7 @@ To load a model checkpoint for analysis, you can use the Lightning Module's `loa
 from module import TransformerModule
 model = TransformerModule.load_from_checkpoint("path/to/model.ckpt")
 ```
-The model's `forward` function takes expects a tensor containing the raw EEG with shape batch-size x time-steps x channels (the batch dimension is optional). It will return class probabilities with shape batch-size x num-classes. Example with random data:
+The model's `forward` function takes expects a tensor containing the raw EEG with shape batch-size x time-steps x channels. It will return class probabilities with shape batch-size x num-classes. Example with random data:
 ```python
 import torch
 # batch-size=8, epoch-length=320, num-channels=64

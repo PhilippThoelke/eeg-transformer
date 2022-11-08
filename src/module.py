@@ -9,30 +9,18 @@ from matplotlib import pyplot as plt
 
 
 class TransformerModule(pl.LightningModule):
-    def __init__(self, hparams, mean=0, std=1):
+    def __init__(self, hparams):
         super().__init__()
         self.save_hyperparameters(hparams)
 
-        self.register_buffer("class_weights", torch.tensor(self.hparams.class_weights))
-        self.register_buffer("mean", torch.scalar_tensor(mean))
-        self.register_buffer("std", torch.scalar_tensor(std))
-
-        if self.hparams.used_data_length is None:
-            self.sample_length = self.hparams.epoch_length // self.hparams.num_tokens
-        else:
-            self.sample_length = (
-                self.hparams.used_data_length // self.hparams.num_tokens
-            )
-
-        self.norm = nn.BatchNorm1d(
-            self.hparams.num_channels - len(self.hparams.ignore_channels)
-        )
+        if self.hparams.token_dropout != 0:
+            pl.utilities.rank_zero_warn("Token dropout is currently not implemented")
 
         # transformer encoder
         self.encoder = EEGEncoder(
             self.hparams.embedding_dim,
             self.hparams.num_layers,
-            self.sample_length,
+            self.hparams.token_size,
             nheads=self.hparams.num_heads,
             dropout=self.hparams.dropout,
         )
@@ -46,52 +34,36 @@ class TransformerModule(pl.LightningModule):
 
         self.confusion_matrices = {}
 
-    def forward(self, x, return_logits=False):
-        # add a batch dimension if required
-        if x.ndim == 2:
-            x = x.unsqueeze(0)
+    def forward(self, x, ch_pos, mask=None, return_logits=False, eps=1e-7):
+        """
+        Perform a forward pass of the EEG Transformer.
 
-        # crop sequence to be divisible by the desired number of tokens
-        cut_length = self.hparams.num_tokens * self.sample_length
-        if cut_length < x.size(1):
-            offset = 0
-            if self.training:
-                offset = torch.randint(0, x.size(1) - cut_length, (1,), device=x.device)
-            x = x[:, offset : offset + cut_length]
+        Letters in the shape descriptions stand for
+        N - batch size, S - EEG samples, C - channels, O - output classes
 
-        # potentially drop some channels
-        if len(self.hparams.ignore_channels) > 0:
-            ch_mask = torch.ones(x.size(2), dtype=torch.bool)
-            ch_mask.scatter_(0, torch.tensor(self.hparams.ignore_channels), False)
-            x = x[..., ch_mask]
+        Parameters:
+            x (torch.Tensor): raw EEG epochs with shape (N, S, C)
+            ch_pos (torch.Tensor): channel positions in 3D space normalized to the unit cube (N, C, 3)
+            mask (torch.Tensor, optional): boolean mask to hide padded channels from the attention mechanism (N, C)
+            return_logits (bool, optional): if True, return unnormalized logits (otherwise softmax scores are returned)
+            eps (float, optional): small epsilon to avoid division by zero when normalizing the data
 
-        # standardize data
-        x = (x - self.mean) / self.std
-        x = self.norm(x.permute(0, 2, 1)).permute(0, 2, 1)
+        Returns:
+            y (torch.Tensor): logits or softmax scores depending on the return_logits parameter (N, O)
+        """
+        # standardize channels
+        mean, std = x.mean(dim=(0, 1), keepdims=True), x.std(dim=(0, 1), keepdims=True)
+        x = (x - mean) / (std + eps)
 
-        # reshape x from (B x time x elec) to (B x token x signal x channel)
-        x = x.view(x.size(0), self.hparams.num_tokens, self.sample_length, x.size(2))
+        # reshape x from (N, S, C) to (C, N, S)
+        x = x.permute(2, 0, 1)
+        # reshape ch_pos from (N, C, 3) to (C, N, 3)
+        ch_pos = ch_pos.permute(1, 0, 2)
 
-        # randomly reorder tokens
-        if self.training and self.hparams.shuffle_tokens != "none":
-            for i in range(x.size(0)):
-                if self.hparams.shuffle_tokens in ["temporal", "all"]:
-                    x[i] = x[i, torch.randperm(x.size(1), device=x.device)]
-                if self.hparams.shuffle_tokens in ["channels", "all"]:
-                    x[i] = x[i, :, :, torch.randperm(x.size(3), device=x.device)]
-
-        # reshape x from (B x token x signal x channel) to (token x B x window_length)
-        x = x.permute(0, 3, 1, 2).reshape(x.size(0), -1, self.sample_length)
-        x = x.permute(1, 0, 2)
-
-        # dropout entire tokens
-        if self.training and self.hparams.token_dropout > 0:
-            mask = torch.rand(x.shape[:2], device=x.device) < self.hparams.token_dropout
-            x[mask] = 0
-            x = x * (1 / (1 - self.hparams.token_dropout))
+        # TODO: implement token dropout (torch.nn.Dropout1D)
 
         # apply encoder model
-        x = self.encoder(x)
+        x = self.encoder(x, ch_pos, mask)
         # apply output model
         y = self.outnet(x)
 
@@ -109,15 +81,19 @@ class TransformerModule(pl.LightningModule):
         return self.step(batch, batch_idx, training_stage="test")
 
     def step(self, batch, batch_idx, training_stage):
-        x, condition, subject = batch
+        x, mask, ch_pos, condition, subject = batch
+
+        # TODO: add Gaussian noise to channel positions
 
         if training_stage == "train":
+            # add Gaussian noise to the input data
             x = x + torch.randn_like(x) * x.std() * self.hparams.noise_scale
 
-        logits = self(x, return_logits=True)
+        logits = self(x, ch_pos, mask, return_logits=True)
 
         # loss
-        loss = F.cross_entropy(logits, condition, self.class_weights)
+        class_weights = torch.tensor(self.hparams.class_weights)
+        loss = F.cross_entropy(logits, condition, class_weights)
         self.log(f"{training_stage}_loss", loss)
 
         # accuracy
@@ -205,17 +181,34 @@ class MultiHeadAttention(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.scale_factor = math.sqrt(embedding_dim / nheads)
 
-    def forward(self, x):
+    def forward(self, x, mask=None):
+        # transform x into queries, keys and values
         q, k, v = self.qkv(x).split(self.embedding_dim, dim=-1)
         q = q.reshape(q.size(0), q.size(1) * self.nheads, -1).permute(1, 0, 2)
         k = k.reshape(k.size(0), k.size(1) * self.nheads, -1).permute(1, 2, 0)
-        attn = torch.softmax((q @ k) / self.scale_factor, dim=-1)
+        # compute attention weights
+        q = q / self.scale_factor
+        if mask is not None:
+            mask = mask.repeat_interleave(self.nheads, dim=0).float()
+            # set masked tokens to 0
+            q = q * mask.unsqueeze(2)
+            k = k * mask.unsqueeze(1)
+            # dot product between queries and keys
+            mask = mask.unsqueeze(2) @ mask.unsqueeze(1)
+            attn = torch.baddbmm(1 - mask, q, k, beta=-1e9)
+        else:
+            # dot product between queries and keys
+            attn = torch.bmm(q, k)
+        attn = torch.softmax(attn, dim=-1)
+        # rescale values by attention weights
         v = v.reshape(v.size(0), v.size(1) * self.nheads, -1).permute(1, 0, 2)
-        o = attn @ v
-        o = o.permute(1, 0, 2).reshape(x.shape)
-        o = self.out(o)
-        o = self.dropout(o)
-        return o, attn.reshape(x.size(1), self.nheads, x.size(0), x.size(0))
+        v = attn @ v
+        # apply output projection
+        v = v.permute(1, 0, 2).reshape(x.shape)
+        o = self.out(v)
+        # return output and attention weights
+        attn = attn.reshape(x.size(1), self.nheads, x.size(0), x.size(0))
+        return self.dropout(o), attn
 
 
 class TransformerEncoderLayer(nn.Module):
@@ -232,22 +225,22 @@ class TransformerEncoderLayer(nn.Module):
         )
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x):
-        x = self.mha(self.norm1(x))[0] + x
+    def forward(self, x, mask=None):
+        x = self.mha(self.norm1(x), mask)[0] + x
         x = self.ff(self.norm2(x)) + x
         return self.dropout(x)
 
 
 class EEGEncoder(nn.Module):
-    def __init__(self, embedding_dim, num_layers, sample_length, nheads=8, dropout=0.1):
+    def __init__(self, embedding_dim, num_layers, token_size, nheads=8, dropout=0.1):
         super().__init__()
-        self.in_proj = nn.Linear(sample_length, embedding_dim)
+        self.in_proj = nn.Linear(token_size, embedding_dim)
         self.pe = PositionalEncoding(embedding_dim, dropout=dropout)
         self.register_parameter("class_token", nn.Parameter(torch.randn(embedding_dim)))
 
         # create encoder layers
-        self.encoder_layers = nn.Sequential(
-            *[
+        self.encoder_layers = nn.ModuleList(
+            [
                 TransformerEncoderLayer(
                     embedding_dim,
                     nheads=nheads,
@@ -258,27 +251,36 @@ class EEGEncoder(nn.Module):
             ]
         )
 
-        self.norm = nn.LayerNorm(embedding_dim)
+        self.output_norm = nn.LayerNorm(embedding_dim)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x):
+    def forward(self, x, ch_pos, mask=None):
         # linear projection into embedding dimension
         x = self.in_proj(x)
         # add positional encoding
-        x = self.pe(x)
+        x = self.pe(x, ch_pos)
         # prepend class token to the sequence
         x = torch.cat([self.class_token[None, None].repeat(1, x.size(1), 1), x], dim=0)
-        # pass sequence through the transformer and extract class tokens
-        x = self.encoder_layers(x)[0]
-        return self.dropout(self.norm(x))
+        if mask is not None:
+            add_row = torch.ones(mask.size(0), 1, dtype=mask.dtype, device=mask.device)
+            mask = torch.cat([add_row, mask], dim=1)
+
+        for layer in self.encoder_layers:
+            x = layer(x, mask)
+        # return the class token only
+        return self.dropout(self.output_norm(x[0]))
 
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, dropout=0.1, max_len=5000):
+    def __init__(self, d_model, dropout=0.1):
         super().__init__()
         self.dropout = nn.Dropout(p=dropout)
-        self.encodings = nn.Embedding(max_len, d_model)
+        self.encoder = nn.Sequential(
+            nn.Linear(3, d_model * 2),
+            nn.Tanh(),
+            nn.Linear(d_model * 2, d_model),
+            nn.Tanh(),
+        )
 
-    def forward(self, x):
-        x = x + self.encodings(torch.arange(x.size(0), device=x.device)).unsqueeze(1)
-        return self.dropout(x)
+    def forward(self, x, ch_pos):
+        return self.dropout(x + self.encoder(ch_pos))
