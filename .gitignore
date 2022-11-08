@@ -136,3 +136,6 @@ figures/
 
 # data dir
 data/
+
+# VS code dir
+.vscode/
