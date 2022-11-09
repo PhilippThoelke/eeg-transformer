@@ -12,6 +12,7 @@ class TransformerModule(pl.LightningModule):
     def __init__(self, hparams):
         super().__init__()
         self.save_hyperparameters(hparams)
+        self.register_buffer("class_weights", torch.tensor(self.hparams.class_weights))
 
         if self.hparams.token_dropout != 0:
             pl.utilities.rank_zero_warn("Token dropout is currently not implemented")
@@ -97,8 +98,7 @@ class TransformerModule(pl.LightningModule):
         logits = self(x, ch_pos, mask, return_logits=True)
 
         # loss
-        class_weights = torch.tensor(self.hparams.class_weights)
-        loss = F.cross_entropy(logits, condition, class_weights)
+        loss = F.cross_entropy(logits, condition, self.class_weights)
         self.log(f"{training_stage}_loss", loss)
 
         # accuracy
