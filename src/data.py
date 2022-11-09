@@ -246,13 +246,20 @@ if __name__ == "__main__":
             pbar.set_postfix(stage)
 
             # extract windows from epochs
-            windows = create_fixed_length_windows(
-                BaseConcatDataset(subj),
-                window_size_samples=int(sfreq * epoch_length),
-                window_stride_samples=int(sfreq * epoch_overlap),
-                drop_last_window=True,
-                n_jobs=-1,
-            )
+            try:
+                windows = create_fixed_length_windows(
+                    BaseConcatDataset(subj),
+                    window_size_samples=int(sfreq * epoch_length),
+                    window_stride_samples=int(sfreq * epoch_overlap),
+                    drop_last_window=True,
+                    n_jobs=-1,
+                )
+            except:
+                print(
+                    f"ERROR during windowing: dataset {dset.__class__.__name__}, subject {subj_idx}"
+                )
+                pbar.update()
+                continue
 
             # extract raw EEG and metadata
             stage["stage"] = "processing"
