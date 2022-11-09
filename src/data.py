@@ -222,9 +222,9 @@ if __name__ == "__main__":
 
     # define datasets
     datasets = [
-        PhysionetMI(sfreq=sfreq, max_subjects=2),
-        Zhou2016(sfreq=sfreq, max_subjects=2),
-        MAMEM1(sfreq=sfreq, max_subjects=2),
+        PhysionetMI(sfreq=sfreq),
+        Zhou2016(sfreq=sfreq),
+        MAMEM1(sfreq=sfreq),
     ]
 
     # prepare processing the data
