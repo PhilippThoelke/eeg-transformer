@@ -162,10 +162,16 @@ if __name__ == "__main__":
         help="weight decay",
     )
     parser.add_argument(
-        "--noise-scale",
+        "--eeg-noise",
         default=0.2,
         type=float,
-        help="scale of noise regularization",
+        help="scale of noise regularization applied to EEG data",
+    )
+    parser.add_argument(
+        "--channel-noise",
+        default=0.0,
+        type=float,
+        help="scale of noise regularization applied to channel positions",
     )
     parser.add_argument(
         "--warmup-steps",

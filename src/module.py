@@ -83,12 +83,17 @@ class TransformerModule(pl.LightningModule):
     def step(self, batch, batch_idx, training_stage):
         x, mask, ch_pos, condition, subject = batch
 
-        # TODO: add Gaussian noise to channel positions
-
-        if training_stage == "train":
+        # noise regularization
+        if training_stage == "train" and self.hparams.eeg_noise > 0:
             # add Gaussian noise to the input data
-            x = x + torch.randn_like(x) * x.std() * self.hparams.noise_scale
+            noise = torch.randn_like(x) * x.std()
+            x = x + noise * self.hparams.eeg_noise
+        if training_stage == "train" and self.hparams.channel_noise > 0:
+            # add Gaussian noise to the channel positions
+            noise = torch.randn_like(ch_pos) * ch_pos.std()
+            ch_pos = ch_pos + noise * self.hparams.channel_noise
 
+        # forward pass
         logits = self(x, ch_pos, mask, return_logits=True)
 
         # loss
