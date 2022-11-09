@@ -181,7 +181,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--max-epochs",
-        default=300,
+        default=1000,
         type=int,
         help="maximum number of epochs",
     )
