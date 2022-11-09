@@ -2,6 +2,7 @@ from os.path import join
 from abc import ABC, abstractmethod
 import pickle
 import codecs
+from tqdm import tqdm
 import mne
 from mne.channels.montage import transform_to_head
 import numpy as np
@@ -17,8 +18,6 @@ from braindecode.preprocessing import (
     create_fixed_length_windows,
 )
 
-mne.set_log_level("ERROR")
-
 
 def standardize(data, channelwise=True):
     axis = 1 if channelwise else None
@@ -26,18 +25,21 @@ def standardize(data, channelwise=True):
     return (data - mean) / std
 
 
-class ProcessedDataset(BaseConcatDataset, ABC):
+class ProcessedDataset(ABC):
     """
     Abstract dataset class used to standardize preprocessing for all inheriting datasets.
     All deriving classes have to implement the `instantiate` method, which should download
     the dataset files and return an instance of `braindecode.datasets.BaseDataset` or
     `braindecode.datasets.BaseConcatDataset`. Deriving classes should further set the
-    `line_freq` attribute appropriately.
+    `line_freq`, `subject_ids` and `num_channels` attributes accordingly.
 
     Parameters
     ----------
     sfreq : desired sampling frequency after preprocessing
     filter_range : tuple of low and high frequency cutoffs
+    standardize_channelwise : wheter to apply channel-wise or recording-wise standardization
+    clip_stds : number of standard deviations beyond EEG data is clipped
+    max_subjects : limits the number of subjects for debugging purposes
     kwargs : keyword arguments passed to the deriving dataset class
     """
 
@@ -47,23 +49,33 @@ class ProcessedDataset(BaseConcatDataset, ABC):
         filter_range=(0.5, None),
         standardize_channelwise=True,
         clip_stds=5,
+        max_subjects=-1,
         **kwargs,
     ):
-        assert hasattr(self, "line_freq"), (
-            f"{type(self).__name__} doesn't implement the line_freq attribute, "
-            "which is required for preprocessing."
-        )
+        assert hasattr(
+            self, "line_freq"
+        ), f"{type(self).__name__} doesn't implement the line_freq attribute."
+        assert hasattr(
+            self, "subject_ids"
+        ), f"{type(self).__name__} doesn't implement the subject_ids attribute."
+        assert hasattr(
+            self, "num_channels"
+        ), f"{type(self).__name__} doesn't implement the num_channels attribute."
+
         self.sfreq = sfreq
         self.filter_range = filter_range
         self.standardize_channelwise = standardize_channelwise
         self.clip_stds = clip_stds
+        self.max_subjects = max_subjects
+        self.instantiate_kwargs = kwargs
 
-        # create the dataset
-        raw_dset = self.instantiate(**kwargs)
-        processed_dset = self.preprocess(raw_dset)
-
-        # combine processed dataset epochs
-        super(ProcessedDataset, self).__init__(processed_dset)
+    def iter_subjects(self):
+        subject_ids = self.subject_ids
+        if self.max_subjects > 0:
+            subject_ids = self.subject_ids[: self.max_subjects]
+        for subject_id in subject_ids:
+            raw_dset = self.instantiate(subject_id, **self.instantiate_kwargs)
+            yield self.preprocess(raw_dset)
 
     @abstractmethod
     def instantiate(self):
@@ -127,6 +139,7 @@ class ProcessedDataset(BaseConcatDataset, ABC):
             for raw_epoch, label in raws:
                 # resample after epoching to avoid event jitter
                 raw_epoch = raw_epoch.resample(self.sfreq)
+                assert raw_epoch.info["nchan"] == self.num_channels
 
                 # update description object
                 desc = curr.description.copy()
@@ -143,11 +156,16 @@ class ProcessedDataset(BaseConcatDataset, ABC):
                 epochs.append(BaseDataset(raw_epoch, desc, target_name="label"))
         return epochs
 
+    def __len__(self):
+        return self.max_subjects if self.max_subjects > 0 else len(self.subject_ids)
+
 
 class PhysionetMI(ProcessedDataset):
     line_freq = 60
+    subject_ids = list(range(1, 110))
+    num_channels = 64
 
-    def instantiate(self, subject_ids=list(range(1, 110))):
+    def instantiate(self, subject_ids):
         return MOABBDataset(
             "PhysionetMI",
             subject_ids,
@@ -171,8 +189,10 @@ class PhysionetMI(ProcessedDataset):
 
 class Zhou2016(ProcessedDataset):
     line_freq = 50
+    subject_ids = list(range(1, 5))
+    num_channels = 14
 
-    def instantiate(self, subject_ids=list(range(1, 5))):
+    def instantiate(self, subject_ids):
         return MOABBDataset("Zhou2016", subject_ids)
 
     def prepare_annotations(self, raw):
@@ -184,8 +204,10 @@ class Zhou2016(ProcessedDataset):
 
 class MAMEM1(ProcessedDataset):
     line_freq = 50
+    subject_ids = list(range(1, 12))
+    num_channels = 256
 
-    def instantiate(self, subject_ids=list(range(1, 12))):
+    def instantiate(self, subject_ids):
         return MOABBDataset("MAMEM1", subject_ids)
 
     def label_transform(self, label, description, raw):
@@ -194,65 +216,108 @@ class MAMEM1(ProcessedDataset):
 
 if __name__ == "__main__":
     result_dir = "data/"
+    epoch_length = 2
+    epoch_overlap = 0.3
+    sfreq = 128
 
-    dset_list = [
-        PhysionetMI(subject_ids=[1, 2]),
-        Zhou2016(subject_ids=[1, 2]),
-        # MAMEM1(subject_ids=[1, 2]),
+    # define datasets
+    datasets = [
+        PhysionetMI(sfreq=sfreq, max_subjects=2),
+        Zhou2016(sfreq=sfreq, max_subjects=2),
+        MAMEM1(sfreq=sfreq, max_subjects=2),
     ]
 
-    dset = BaseConcatDataset(dset_list)
-    sfreq = dset.datasets[0].raw.info["sfreq"]
-    dset = create_fixed_length_windows(
-        dset,
-        window_size_samples=int(sfreq * 2),
-        window_stride_samples=int(sfreq * 0.3),
-        drop_last_window=True,
-        n_jobs=-1,
-    )
+    # prepare processing the data
+    mne.set_log_level("ERROR")
+    fname = "-".join(d.__class__.__name__ for d in datasets)
+    max_channels = max(d.num_channels for d in datasets)
+    memmap_mode = "w+"
+    memmap_shape = None
+    metadata = []
+    pbar = tqdm(total=sum(len(d) for d in datasets))
+    stage = dict()
 
-    epochs = sum((list(d.windows.get_data()) for d in dset.datasets), [])
-    description = pd.concat(
-        [pd.concat([d.description] * len(d.windows), axis=1).T for d in dset.datasets]
-    ).reset_index()
-    labels = description["label"].values
-    subject_labels = (
-        description["dataset"]
-        .str.cat(description["subject"].astype(str), sep="-")
-        .values
-    )
-    ch_pos = description["ch_pos"].values
+    # iterate all data
+    for dset in datasets:
+        for subj_idx, subj in enumerate(dset.iter_subjects()):
+            stage["dataset"] = dset.__class__.__name__
+            stage["subject"] = subj_idx
+            stage["stage"] = "windowing"
+            pbar.set_postfix(stage)
 
-    max_channels = max([c.shape[0] for c in ch_pos])
-    shape = len(epochs), epochs[0].shape[1], max_channels
-    fname = "-".join(d.__class__.__name__ for d in dset_list)
+            # extract windows from epochs
+            windows = create_fixed_length_windows(
+                BaseConcatDataset(subj),
+                window_size_samples=int(sfreq * epoch_length),
+                window_stride_samples=int(sfreq * epoch_overlap),
+                drop_last_window=True,
+                n_jobs=-1,
+            )
 
-    print("\nSaving raw data...", end="")
-    file = np.memmap(
-        join(result_dir, "raw-" + fname + ".dat"),
-        mode="w+",
-        dtype=np.float32,
-        shape=shape,
-    )
-    metadata = pd.DataFrame(
-        index=np.arange(shape[0], dtype=int),
-        columns=["subject", "condition", "channel_pos_pickle"],
-    )
+            # extract raw EEG and metadata
+            stage["stage"] = "processing"
+            pbar.set_postfix(stage)
+            epochs, description = [], []
+            for d in windows.datasets:
+                # get raw EEG data
+                epochs.extend(list(d.windows.get_data()))
+                # repeat metadata for every window
+                desc = [d.description] * len(d.windows)
+                description.append(pd.concat(desc, axis=1).T)
+            description = pd.concat(description).reset_index()
 
-    for i in range(shape[0]):
-        curr_epoch = epochs[i].T
-        if curr_epoch.shape[1] < max_channels:
-            padding = np.zeros((shape[1], max_channels - curr_epoch.shape[1]))
-            curr_epoch = np.concatenate([curr_epoch, padding], axis=1)
-        file[i] = curr_epoch
-        file.flush()
+            labels = description["label"].values
+            subject_labels = (
+                description["dataset"]
+                .str.cat(description["subject"].astype(str), sep="-")
+                .values
+            )
+            ch_pos = description["ch_pos"].values
+            shape = len(epochs), epochs[0].shape[1], max_channels
 
-        ch_pos_pickle = codecs.encode(pickle.dumps(ch_pos[i]), "base64").decode()
-        metadata.iloc[i] = [subject_labels[i], labels[i], ch_pos_pickle]
-    print("done")
+            # update data file size
+            if memmap_shape is None:
+                memmap_shape = shape
+            else:
+                assert memmap_shape[1] == shape[1]
+                assert memmap_shape[2] == shape[2]
+                memmap_shape = (
+                    memmap_shape[0] + shape[0],
+                    memmap_shape[1],
+                    memmap_shape[2],
+                )
 
-    print("Saving metadata...", end="")
-    with open(join(result_dir, "label-" + fname + ".csv"), "w") as f:
-        f.write(f"#shape={shape}\n")
-        metadata.to_csv(f)
-    print("done")
+            # open the memory mapped data file, prepare storing the data
+            file = np.memmap(
+                join(result_dir, "raw-" + fname + ".dat"),
+                mode=memmap_mode,
+                dtype=np.float32,
+                shape=memmap_shape,
+            )
+            memmap_mode = "r+"
+
+            # write epochs to disk
+            stage["stage"] = "saving"
+            pbar.set_postfix(stage)
+            for i in range(shape[0]):
+                curr_epoch = epochs[i].T
+                if curr_epoch.shape[1] < max_channels:
+                    padding = np.zeros((shape[1], max_channels - curr_epoch.shape[1]))
+                    curr_epoch = np.concatenate([curr_epoch, padding], axis=1)
+                file[i] = curr_epoch
+                file.flush()
+
+                # append a row in the metadata csv
+                ch_pos_pkl = codecs.encode(pickle.dumps(ch_pos[i]), "base64").decode()
+                metadata.append([subject_labels[i], labels[i], ch_pos_pkl])
+
+            # write metadata to disk
+            with open(join(result_dir, "label-" + fname + ".csv"), "w") as f:
+                f.write(f"#shape={memmap_shape}\n")
+                pd.DataFrame(
+                    metadata, columns=["subject", "condition", "channel_pos_pickle"]
+                ).to_csv(f)
+
+            pbar.update()
+            stage["stage"] = "preprocessing next subject"
+            pbar.set_postfix(stage)
