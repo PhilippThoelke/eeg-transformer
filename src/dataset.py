@@ -147,13 +147,3 @@ class RawDataset(Dataset):
     def id2condition(self, condition_id):
         # mapping from index to condition identifier
         return self.condition_mapping[condition_id]
-
-
-if __name__ == "__main__":
-    d = RawDataset(
-        data_path="data/raw-nsamp_15814-eplen_256-nchan_64.dat",
-        label_path="data/label-nsamp_15814-eplen_256-nchan_64.csv",
-        epoch_length=256,
-        num_channels=64,
-    )
-    s = d[0]

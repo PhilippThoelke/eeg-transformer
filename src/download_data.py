@@ -1,4 +1,6 @@
 from os.path import join
+import codecs
+import pickle
 import numpy as np
 import pandas as pd
 import mne
@@ -22,11 +24,13 @@ def extract_baseline_eyes(subjects, runs, epoch_duration):
     subject_labels = []
     labels = []
     run2label = {1: "eyes-open", 2: "eyes-closed"}
+    ch_names = None
     for subject in subjects:
         for run in runs:
             raw_fnames = eegbci.load_data(subject, run, update_path=False)
             raws = [read_raw_edf(f, preload=True) for f in raw_fnames]
             raw = concatenate_raws(raws)
+            ch_names = raw.info["ch_names"]
             data = raw.get_data()
             epoch_steps = int(epoch_duration * raw.info["sfreq"])
 
@@ -41,17 +45,19 @@ def extract_baseline_eyes(subjects, runs, epoch_duration):
                 subject_labels.append(subject)
                 labels.append(run2label[run])
                 offset += epoch_steps
-    return epochs, subject_labels, labels
+    return epochs, subject_labels, labels, ch_names
 
 
 def extract_task(subjects, runs, epoch_duration, label_names):
     epochs = []
     subject_labels = []
     labels = []
+    ch_names = None
     for subject in subjects:
         raw_fnames = eegbci.load_data(subject, runs, update_path=False)
         raws = [read_raw_edf(f, preload=True) for f in raw_fnames]
         raw = concatenate_raws(raws)
+        ch_names = raw.info["ch_names"]
         epoch_steps = int(epoch_duration * raw.info["sfreq"])
 
         curr_epochs = mne.Epochs(
@@ -95,7 +101,7 @@ def extract_task(subjects, runs, epoch_duration, label_names):
         )
         subject_labels.extend([subject] * len(curr_epochs["T2"]))
         labels.extend([label_names[1]] * len(curr_epochs["T2"]))
-    return epochs, subject_labels, labels
+    return epochs, subject_labels, labels, ch_names
 
 
 def extract_epochs(targets, subjects=range(1, 110), epoch_duration=5):
@@ -112,34 +118,35 @@ def extract_epochs(targets, subjects=range(1, 110), epoch_duration=5):
         targets = [targets]
 
     epochs, subject_labels, labels = [], [], []
+    ch_names = None
     for target in targets:
         if target == "baseline-eyes":
-            ep, subj, lab = extract_baseline_eyes(
+            ep, subj, lab, ch_names = extract_baseline_eyes(
                 subjects=subjects, runs=[1, 2], epoch_duration=epoch_duration
             )
         elif target == "fist-motion":
-            ep, subj, lab = extract_task(
+            ep, subj, lab, ch_names = extract_task(
                 subjects=subjects,
                 runs=[3, 7, 11],
                 epoch_duration=epoch_duration,
                 label_names=["left-fist-move", "right-fist-move"],
             )
         elif target == "fist-imagination":
-            ep, subj, lab = extract_task(
+            ep, subj, lab, ch_names = extract_task(
                 subjects=subjects,
                 runs=[4, 8, 12],
                 epoch_duration=epoch_duration,
                 label_names=["left-fist-imag", "right-fist-imag"],
             )
         elif target == "fist_feet-motion":
-            ep, subj, lab = extract_task(
+            ep, subj, lab, ch_names = extract_task(
                 subjects=subjects,
                 runs=[5, 9, 13],
                 epoch_duration=epoch_duration,
                 label_names=["fists-move", "feet-move"],
             )
         elif target == "fist_feet-imagination":
-            ep, subj, lab = extract_task(
+            ep, subj, lab, ch_names = extract_task(
                 subjects=subjects,
                 runs=[6, 10, 14],
                 epoch_duration=epoch_duration,
@@ -151,37 +158,47 @@ def extract_epochs(targets, subjects=range(1, 110), epoch_duration=5):
         epochs.extend(ep)
         subject_labels.extend(subj)
         labels.extend(lab)
-    return epochs, subject_labels, labels
+
+    for i in range(len(ch_names)):
+        ch = ch_names[i].strip(".").upper()
+        if ch.endswith("Z"):
+            ch = ch[:-1] + "z"
+        if ch.startswith("FP"):
+            ch = "Fp" + ch[2:]
+        ch_names[i] = ch
+    return epochs, subject_labels, labels, ch_names
 
 
-epochs, subject_labels, labels = extract_epochs(
+epochs, subject_labels, labels, ch_names = extract_epochs(
     target_type, epoch_duration=epoch_duration
 )
 
+montage = mne.channels.make_standard_montage("standard_1005")
+ch_pos = np.stack([montage.get_positions()["ch_pos"][ch] for ch in ch_names], axis=0)
+
 shape = len(epochs), epochs[0].shape[1], epochs[0].shape[0]
-fname = (
-    f"nsamp_{shape[0]}-"
-    f"eplen_{shape[1]}"
-    f"{'-norm' if normalize_epochs else ''}-"
-    f"example_{'-'.join(target_type) if isinstance(target_type, list) else target_type}"
-)
+fname = f"PhysioNetMotor_{'-'.join(target_type) if isinstance(target_type, list) else target_type}"
 
 print("\nSaving raw data...", end="")
 file = np.memmap(
     join(result_dir, "raw-" + fname + ".dat"), mode="w+", dtype=np.float32, shape=shape
 )
-meta_info = pd.DataFrame(
+metadata = pd.DataFrame(
     index=np.arange(shape[0], dtype=int),
-    columns=["subject", "condition"],
+    columns=["subject", "condition", "channel_pos_pickle"],
     dtype=str,
 )
 
 for i in range(shape[0]):
     file[i] = epochs[i].T
     file.flush()
-    meta_info.iloc[i] = [subject_labels[i], labels[i]]
+
+    ch_pos_pickle = codecs.encode(pickle.dumps(ch_pos), "base64").decode()
+    metadata.iloc[i] = [subject_labels[i], labels[i], ch_pos_pickle]
 print("done")
 
 print("Saving metadata...", end="")
-meta_info.to_csv(join(result_dir, "label-" + fname + ".csv"))
+with open(join(result_dir, "label-" + fname + ".csv"), "w") as f:
+    f.write(f"#shape={shape}\n")
+    metadata.to_csv(f)
 print("done")

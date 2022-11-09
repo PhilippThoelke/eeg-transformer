@@ -211,10 +211,7 @@ if __name__ == "__main__":
         n_jobs=-1,
     )
 
-    epochs = sum(
-        (list(d.windows.get_data()) for d in dset.datasets),
-        [],
-    )
+    epochs = sum((list(d.windows.get_data()) for d in dset.datasets), [])
     description = pd.concat(
         [pd.concat([d.description] * len(d.windows), axis=1).T for d in dset.datasets]
     ).reset_index()
