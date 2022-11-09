@@ -195,13 +195,13 @@ class MAMEM1(ProcessedDataset):
 if __name__ == "__main__":
     result_dir = "data/"
 
-    dset = BaseConcatDataset(
-        [
-            PhysionetMI(subject_ids=[1, 2]),
-            Zhou2016(subject_ids=[1, 2]),
-            # MAMEM1(subject_ids=[1, 2]),
-        ]
-    )
+    dset_list = [
+        PhysionetMI(subject_ids=[1, 2]),
+        Zhou2016(subject_ids=[1, 2]),
+        # MAMEM1(subject_ids=[1, 2]),
+    ]
+
+    dset = BaseConcatDataset(dset_list)
     sfreq = dset.datasets[0].raw.info["sfreq"]
     dset = create_fixed_length_windows(
         dset,
@@ -228,8 +228,7 @@ if __name__ == "__main__":
 
     max_channels = max([c.shape[0] for c in ch_pos])
     shape = len(epochs), epochs[0].shape[1], max_channels
-    
-    fname = f"nsamp_{shape[0]}-eplen_{shape[1]}-nchan_{shape[2]}"
+    fname = "-".join(d.__class__.__name__ for d in dset_list)
 
     print("\nSaving raw data...", end="")
     file = np.memmap(
