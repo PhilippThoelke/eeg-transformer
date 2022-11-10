@@ -66,18 +66,13 @@ def main(model_dir, data_path, label_path):
     model = TransformerModule.load_from_checkpoint(model_path[0])
     model.eval().freeze()
 
+    if data_path is None:
+        data_path = model.hparams.data_path
+    if label_path is None:
+        label_path = model.hparams.label_path
+
     # load dataset
-    data = RawDataset(
-        data_path,
-        label_path,
-        epoch_length=model.hparams.epoch_length,
-        nchannels=model.hparams.num_channels,
-        low_pass=model.hparams.low_pass,
-        high_pass=model.hparams.high_pass,
-        notch_freq=model.hparams.notch_freq,
-        sample_rate=model.hparams.sample_rate,
-        conditions=model.hparams.conditions,
-    )
+    data = RawDataset(model.hparams, data_path=data_path, label_path=label_path)
     splits = torch.load(join(model_dir, "splits.pt"))["val_idx"]
     data = Subset(data, splits)
     dl = DataLoader(data, batch_size=64, num_workers=4)
@@ -138,13 +133,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data-path",
         type=str,
-        required=True,
         help="path to the memory mapped dataset file",
     )
     parser.add_argument(
         "--label-path",
         type=str,
-        required=True,
         help="path to the label CSV file",
     )
     args = parser.parse_args()

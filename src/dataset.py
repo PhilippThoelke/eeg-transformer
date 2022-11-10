@@ -10,11 +10,8 @@ import warnings
 
 
 class RawDataset(Dataset):
-    def __init__(self, args=None, **kwargs):
-        if args is None:
-            args = kwargs
-        if not isinstance(args, dict):
-            args = args.__dict__
+    def __init__(self, args, **kwargs):
+        args.update(kwargs)
 
         self.data_path = args.get("data_path")
         self.label_path = args.get("label_path")
