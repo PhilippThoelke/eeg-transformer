@@ -8,3 +8,5 @@ pytorch-lightning==1.5.0
 mayavi==4.7.4
 Braindecode==0.7
 moabb==0.4.6
+mne-bids==0.11.1
+openneuro-py==2022.2.0

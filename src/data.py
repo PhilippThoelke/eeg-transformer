@@ -12,6 +12,8 @@ from braindecode.datasets import (
     BaseConcatDataset,
     MOABBDataset,
 )
+import openneuro
+from mne_bids import read_raw_bids, BIDSPath
 from braindecode.preprocessing import (
     preprocess,
     Preprocessor,
@@ -78,7 +80,7 @@ class ProcessedDataset(ABC):
             yield self.preprocess(raw_dset)
 
     @abstractmethod
-    def instantiate(self):
+    def instantiate(self, subject_id):
         """Implement this function to download and instantiate the dataset"""
         pass
 
@@ -165,10 +167,10 @@ class PhysionetMI(ProcessedDataset):
     subject_ids = list(range(1, 110))
     num_channels = 64
 
-    def instantiate(self, subject_ids):
+    def instantiate(self, subject_id):
         return MOABBDataset(
             "PhysionetMI",
-            subject_ids,
+            subject_id,
             dataset_kwargs=dict(imagined=True, executed=True),
         )
 
@@ -192,8 +194,8 @@ class Zhou2016(ProcessedDataset):
     subject_ids = list(range(1, 5))
     num_channels = 14
 
-    def instantiate(self, subject_ids):
-        return MOABBDataset("Zhou2016", subject_ids)
+    def instantiate(self, subject_id):
+        return MOABBDataset("Zhou2016", subject_id)
 
     def prepare_annotations(self, raw):
         keep_annots = ["left_hand", "right_hand", "feet"]
@@ -207,11 +209,64 @@ class MAMEM1(ProcessedDataset):
     subject_ids = list(range(1, 12))
     num_channels = 256
 
-    def instantiate(self, subject_ids):
-        return MOABBDataset("MAMEM1", subject_ids)
+    def instantiate(self, subject_id):
+        return MOABBDataset("MAMEM1", subject_id)
 
     def label_transform(self, label, description, raw):
         return "flickering_" + label + "Hz"
+
+
+class RestingCognitive(ProcessedDataset):
+    line_freq = 50
+    subject_ids = list(range(1, 61))
+    num_channels = 61
+
+    def instantiate(self, subject_id):
+        subject_id_bids = f"{subject_id:02}"
+        dataset_id = "ds004148"
+        root = join(".", dataset_id)
+        sub_dir = f"sub-{subject_id_bids}"
+        # download current subject
+        openneuro.download(dataset=dataset_id, target_dir=root, include=sub_dir)
+
+        # add *_coordsystem.json files for every *_electrodes.tsv file
+        # these are missing in the original dataset files
+        electrode_paths = BIDSPath(
+            subject=subject_id_bids, suffix="electrodes", root=root
+        )
+        for path in electrode_paths.match():
+            path.suffix = "coordsystem"
+            path.extension = ".json"
+            with open(path.fpath, "w") as f:
+                f.write(
+                    '{\n"EEGCoordinateSystem":"Other",\n"EEGCoordinateUnits":"mm"\n}'
+                )
+
+        paths = BIDSPath(
+            subject=subject_id_bids,
+            datatype="eeg",
+            suffix="eeg",
+            extension="vhdr",
+            root=root,
+        )
+        raw_datasets = []
+        for path in paths.match():
+            raw = read_raw_bids(path)
+            # set annotations according to the task
+            raw.set_annotations(mne.Annotations([raw.tmin], [raw.tmax], [path.task]))
+            raw_datasets.append(BaseDataset(raw))
+
+        # make sure all raws are consistent
+        nchans = [d.raw.info["nchan"] for d in raw_datasets]
+        assert all(self.num_channels == nc for nc in nchans)
+        line_freqs = [d.raw.info["line_freq"] for d in raw_datasets]
+        assert all(self.line_freq == lf for lf in line_freqs)
+
+        dset = BaseConcatDataset(raw_datasets)
+        # create dataset description
+        desc = pd.DataFrame([subject_id] * len(dset.description), columns=["subject"])
+        dset.set_description(desc)
+        return dset
 
 
 if __name__ == "__main__":
@@ -222,6 +277,7 @@ if __name__ == "__main__":
 
     # define datasets
     datasets = [
+        RestingCognitive(sfreq=sfreq),
         PhysionetMI(sfreq=sfreq),
         Zhou2016(sfreq=sfreq),
         MAMEM1(sfreq=sfreq),
@@ -317,6 +373,8 @@ if __name__ == "__main__":
                 # append a row in the metadata csv
                 ch_pos_pkl = codecs.encode(pickle.dumps(ch_pos[i]), "base64").decode()
                 metadata.append([subject_labels[i], labels[i], ch_pos_pkl])
+            # free epochs object
+            del epochs
 
             # write metadata to disk
             with open(join(result_dir, "label-" + fname + ".csv"), "w") as f:
