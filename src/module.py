@@ -127,7 +127,7 @@ class TransformerModule(pl.LightningModule):
         )
         # learning rate scheduler
         opt.param_groups[0]["initial_lr"] = self.hparams.learning_rate
-        scheduler = optim.lr_scheduler.ExponentialLR(opt, gamma=0.995, last_epoch=30)
+        scheduler = optim.lr_scheduler.ExponentialLR(opt, gamma=self.hparams.lr_decay)
         return dict(optimizer=opt, lr_scheduler=scheduler, monitor="train_loss")
 
     def training_epoch_end(self, *args, **kwargs):

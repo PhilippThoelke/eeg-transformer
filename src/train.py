@@ -108,6 +108,12 @@ if __name__ == "__main__":
         help="base learning rate",
     )
     parser.add_argument(
+        "--lr-decay",
+        default=0.995,
+        type=float,
+        help="learning rate decay factor",
+    )
+    parser.add_argument(
         "--early-stopping-patience",
         default=100,
         type=int,
