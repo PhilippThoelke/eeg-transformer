@@ -10,8 +10,13 @@ import warnings
 
 
 class RawDataset(Dataset):
-    def __init__(self, args, **kwargs):
+    def __init__(self, args={}, **kwargs):
+        if not isinstance(args, dict):
+            args = args.__dict__
         args.update(kwargs)
+        assert (
+            "data_path" in args and "label_path" in args
+        ), "Arguments require at least data_path and label_path to be defined"
 
         self.data_path = args.get("data_path")
         self.label_path = args.get("label_path")
