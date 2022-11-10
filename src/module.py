@@ -82,7 +82,7 @@ class TransformerModule(pl.LightningModule):
         return self.step(batch, batch_idx, training_stage="test")
 
     def step(self, batch, batch_idx, training_stage):
-        x, mask, ch_pos, condition, subject = batch
+        x, ch_pos, mask, condition, subject = batch
 
         # noise regularization
         if training_stage == "train" and self.hparams.eeg_noise > 0:

@@ -131,8 +131,8 @@ class RawDataset(Dataset):
 
         return (
             torch.from_numpy(x.astype(np.float32)),
-            mask,
             channel_pos,
+            mask,
             self.condition_ids[idx],
             self.subject_ids[idx],
         )
