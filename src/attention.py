@@ -79,7 +79,7 @@ def main(model_dir, data_path, label_path):
 
     # iterate over the dataset
     acc = 0
-    attn, predictions, labels, subjects, confidences = [], [], [], [], [], []
+    attn, predictions, labels, subjects, confidences = [], [], [], [], []
     prog = tqdm(dl, desc="extracting attention weights")
     for i, (x, y, subj) in enumerate(prog):
         # extract attention weights
