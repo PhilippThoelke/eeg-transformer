@@ -81,10 +81,10 @@ def main(model_dir, data_path, label_path):
     acc = 0
     attn, predictions, labels, subjects, confidences = [], [], [], [], []
     prog = tqdm(dl, desc="extracting attention weights")
-    for i, (x, y, subj) in enumerate(prog):
+    for i, (x, mask, ch_pos, y, subj) in enumerate(prog):
         # extract attention weights
         with Attention(model) as a:
-            pred = model(x)
+            pred = model(x, ch_pos, mask)
 
         # save batchwise metrics
         attn.append(rollout(a.get()))
