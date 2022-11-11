@@ -253,7 +253,9 @@ class RestingCognitive(ProcessedDataset):
         for path in paths.match():
             raw = read_raw_bids(path)
             # set annotations according to the task
-            raw.set_annotations(mne.Annotations([raw.tmin], [raw.tmax], [path.task]))
+            raw.set_annotations(
+                mne.Annotations([raw.times.min()], [raw.times.max()], [path.task])
+            )
             raw_datasets.append(BaseDataset(raw))
 
         # make sure all raws are consistent
