@@ -14,9 +14,6 @@ class TransformerModule(pl.LightningModule):
         self.save_hyperparameters(hparams)
         self.register_buffer("class_weights", torch.tensor(self.hparams.class_weights))
 
-        if self.hparams.token_dropout != 0:
-            pl.utilities.rank_zero_warn("Token dropout is currently not implemented")
-
         # transformer encoder
         self.encoder = EEGEncoder(
             self.hparams.embedding_dim,
@@ -61,8 +58,6 @@ class TransformerModule(pl.LightningModule):
         # reshape ch_pos from (N, C, 3) to (C, N, 3)
         ch_pos = ch_pos.permute(1, 0, 2)
 
-        # TODO: implement token dropout (torch.nn.Dropout1D)
-
         # apply encoder model
         x = self.encoder(x, ch_pos, mask)
         # apply output model
@@ -84,15 +79,28 @@ class TransformerModule(pl.LightningModule):
     def step(self, batch, batch_idx, training_stage):
         x, ch_pos, mask, condition, subject = batch
 
-        # noise regularization
-        if training_stage == "train" and self.hparams.eeg_noise > 0:
-            # add Gaussian noise to the input data
-            noise = torch.randn_like(x) * x.std()
-            x = x + noise * self.hparams.eeg_noise
-        if training_stage == "train" and self.hparams.channel_noise > 0:
-            # add Gaussian noise to the channel positions
-            noise = torch.randn_like(ch_pos) * ch_pos.std()
-            ch_pos = ch_pos + noise * self.hparams.channel_noise
+        # regularization
+        if training_stage == "train":
+            # EEG noise regularization
+            if self.hparams.eeg_noise > 0:
+                noise = torch.randn_like(x) * x.std()
+                x = x + noise * self.hparams.eeg_noise
+            # channel position noise regularization
+            if self.hparams.channel_noise > 0:
+                noise = torch.randn_like(ch_pos) * ch_pos.std()
+                ch_pos = ch_pos + noise * self.hparams.channel_noise
+            # token dropout via masking
+            if self.hparams.token_dropout > 0:
+                if mask is None:
+                    # initialize mask
+                    mask = torch.ones(
+                        x.size(0), x.size(2), dtype=torch.bool, device=x.device
+                    )
+                dropout_mask = (
+                    torch.rand(mask.shape, device=mask.device)
+                    < self.hparams.token_dropout
+                )
+                mask[dropout_mask] = False
 
         # forward pass
         logits = self(x, ch_pos, mask, return_logits=True)
