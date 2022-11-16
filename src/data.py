@@ -33,7 +33,7 @@ class ProcessedDataset(ABC):
     All deriving classes have to implement the `instantiate` method, which should download
     the dataset files and return an instance of `braindecode.datasets.BaseDataset` or
     `braindecode.datasets.BaseConcatDataset`. Deriving classes should further set the
-    `line_freq`, `subject_ids` and `num_channels` attributes accordingly.
+    `line_freq` and `subject_ids` attributes accordingly.
 
     Parameters
     ----------
@@ -60,9 +60,6 @@ class ProcessedDataset(ABC):
         assert hasattr(
             self, "subject_ids"
         ), f"{type(self).__name__} doesn't implement the subject_ids attribute."
-        assert hasattr(
-            self, "num_channels"
-        ), f"{type(self).__name__} doesn't implement the num_channels attribute."
 
         self.sfreq = sfreq
         self.filter_range = filter_range
@@ -141,7 +138,6 @@ class ProcessedDataset(ABC):
             for raw_epoch, label in raws:
                 # resample after epoching to avoid event jitter
                 raw_epoch = raw_epoch.resample(self.sfreq)
-                assert raw_epoch.info["nchan"] == self.num_channels
 
                 # update description object
                 desc = curr.description.copy()
@@ -165,7 +161,6 @@ class ProcessedDataset(ABC):
 class PhysionetMI(ProcessedDataset):
     line_freq = 60
     subject_ids = list(range(1, 110))
-    num_channels = 64
 
     def instantiate(self, subject_id):
         return MOABBDataset(
@@ -192,7 +187,6 @@ class PhysionetMI(ProcessedDataset):
 class Zhou2016(ProcessedDataset):
     line_freq = 50
     subject_ids = list(range(1, 5))
-    num_channels = 14
 
     def instantiate(self, subject_id):
         return MOABBDataset("Zhou2016", subject_id)
@@ -207,7 +201,6 @@ class Zhou2016(ProcessedDataset):
 class MAMEM1(ProcessedDataset):
     line_freq = 50
     subject_ids = list(range(1, 12))
-    num_channels = 256
 
     def instantiate(self, subject_id):
         return MOABBDataset("MAMEM1", subject_id)
@@ -219,7 +212,6 @@ class MAMEM1(ProcessedDataset):
 class RestingCognitive(ProcessedDataset):
     line_freq = 50
     subject_ids = list(range(1, 61))
-    num_channels = 61
 
     def instantiate(self, subject_id):
         subject_id_bids = f"{subject_id:02}"
@@ -259,8 +251,6 @@ class RestingCognitive(ProcessedDataset):
             raw_datasets.append(BaseDataset(raw))
 
         # make sure all raws are consistent
-        nchans = [d.raw.info["nchan"] for d in raw_datasets]
-        assert all(self.num_channels == nc for nc in nchans)
         line_freqs = [d.raw.info["line_freq"] for d in raw_datasets]
         assert all(self.line_freq == lf for lf in line_freqs)
 
@@ -279,31 +269,35 @@ if __name__ == "__main__":
 
     # define datasets
     datasets = [
-        RestingCognitive(sfreq=sfreq),
         PhysionetMI(sfreq=sfreq),
         Zhou2016(sfreq=sfreq),
         MAMEM1(sfreq=sfreq),
+        RestingCognitive(sfreq=sfreq),
     ]
 
     # prepare processing the data
     mne.set_log_level("ERROR")
     fname = "-".join(d.__class__.__name__ for d in datasets)
-    max_channels = max(d.num_channels for d in datasets)
-    memmap_mode = "w+"
-    memmap_shape = None
+    memmap_len = 0
     metadata = []
     pbar = tqdm(total=sum(len(d) for d in datasets))
     stage = dict()
 
     # iterate all data
     for dset in datasets:
-        for subj_idx, subj in enumerate(dset.iter_subjects()):
+        subj_iter = dset.iter_subjects()
+        for subj_idx in range(len(dset)):
             stage["dataset"] = dset.__class__.__name__
             stage["subject"] = subj_idx
-            stage["stage"] = "windowing"
+
+            # retrieve data and preprocess for the current subject
+            stage["stage"] = "preprocessing"
             pbar.set_postfix(stage)
+            subj = next(subj_iter)
 
             # extract windows from epochs
+            stage["stage"] = "windowing"
+            pbar.set_postfix(stage)
             try:
                 windows = create_fixed_length_windows(
                     BaseConcatDataset(subj),
@@ -314,7 +308,8 @@ if __name__ == "__main__":
                 )
             except:
                 print(
-                    f"ERROR during windowing: dataset {dset.__class__.__name__}, subject {subj_idx}"
+                    f"ERROR during windowing: dataset {dset.__class__.__name__}"
+                    f", subject {subj_idx}"
                 )
                 pbar.update()
                 continue
@@ -325,66 +320,68 @@ if __name__ == "__main__":
             epochs, description = [], []
             for d in windows.datasets:
                 # get raw EEG data
-                epochs.extend(list(d.windows.get_data()))
+                epochs.extend(list(d.windows.get_data().astype(np.float32)))
                 # repeat metadata for every window
                 desc = [d.description] * len(d.windows)
                 description.append(pd.concat(desc, axis=1).T)
             description = pd.concat(description).reset_index()
-
-            labels = description["label"].values
-            subject_labels = (
-                description["dataset"]
-                .str.cat(description["subject"].astype(str), sep="-")
-                .values
+            description["subject_label"] = description["dataset"].str.cat(
+                description["subject"].astype(str), sep="-"
             )
-            ch_pos = description["ch_pos"].values
-            shape = len(epochs), epochs[0].shape[1], max_channels
-
-            # update data file size
-            if memmap_shape is None:
-                memmap_shape = shape
-            else:
-                assert memmap_shape[1] == shape[1]
-                assert memmap_shape[2] == shape[2]
-                memmap_shape = (
-                    memmap_shape[0] + shape[0],
-                    memmap_shape[1],
-                    memmap_shape[2],
-                )
+            description["ch_pos_pkl"] = description["ch_pos"].apply(
+                lambda x: codecs.encode(pickle.dumps(x), "base64").decode()
+            )
 
             # open the memory mapped data file, prepare storing the data
+            flat_epochs_len = sum(map(np.size, epochs))
             file = np.memmap(
                 join(result_dir, "raw-" + fname + ".dat"),
-                mode=memmap_mode,
+                mode="w+" if memmap_len == 0 else "r+",
                 dtype=np.float32,
-                shape=memmap_shape,
+                offset=memmap_len * np.float32().nbytes,
+                shape=flat_epochs_len,
             )
-            memmap_mode = "r+"
 
             # write epochs to disk
-            stage["stage"] = "saving"
+            stage["stage"] = "storing data"
             pbar.set_postfix(stage)
-            for i in range(shape[0]):
-                curr_epoch = epochs[i].T
-                if curr_epoch.shape[1] < max_channels:
-                    padding = np.zeros((shape[1], max_channels - curr_epoch.shape[1]))
-                    curr_epoch = np.concatenate([curr_epoch, padding], axis=1)
-                file[i] = curr_epoch
+
+            offset = 0
+            for i in range(len(epochs)):
+                # write epoch to memory mapped NumPy file
+                curr_epoch = epochs[i].T.reshape(-1)
+                file[offset : offset + curr_epoch.size] = curr_epoch
                 file.flush()
 
                 # append a row in the metadata csv
-                ch_pos_pkl = codecs.encode(pickle.dumps(ch_pos[i]), "base64").decode()
-                metadata.append([subject_labels[i], labels[i], ch_pos_pkl])
+                metadata.append(
+                    [
+                        description["subject_label"].iloc[i],  # subject label
+                        description["label"].iloc[i],  # class label
+                        epochs[i].shape[0],  # number of channels
+                        memmap_len + offset,  # start index
+                        memmap_len + offset + curr_epoch.size,  # stop index
+                        description["ch_pos_pkl"].iloc[i],  # channel positions
+                    ]
+                )
+                offset += curr_epoch.size
             # free epochs object
             del epochs
 
-            # write metadata to disk
-            with open(join(result_dir, "label-" + fname + ".csv"), "w") as f:
-                f.write(f"#shape={memmap_shape}\n")
-                pd.DataFrame(
-                    metadata, columns=["subject", "condition", "channel_pos_pickle"]
-                ).to_csv(f)
+            # update memmap shape
+            memmap_len += flat_epochs_len
 
+            # write metadata to disk
+            pd.DataFrame(
+                metadata,
+                columns=[
+                    "subject",
+                    "condition",
+                    "num_channels",
+                    "start_idx",
+                    "stop_idx",
+                    "channel_pos_pickle",
+                ],
+            ).to_csv(join(result_dir, "label-" + fname + ".csv"))
             pbar.update()
-            stage["stage"] = "preprocessing next subject"
-            pbar.set_postfix(stage)
+    pbar.close()

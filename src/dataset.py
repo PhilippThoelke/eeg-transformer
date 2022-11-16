@@ -4,7 +4,7 @@ import pandas as pd
 import pickle
 import codecs
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, default_collate
 from mne.filter import notch_filter, filter_data
 import warnings
 
@@ -36,27 +36,10 @@ class RawDataset(Dataset):
                 "low pass or high pass filter"
             )
 
-        with open(self.label_path, "r") as f:
-            # parse shape information
-            header = next(f)
-            key, value = header.strip("#\n").split("=")
-            assert key == "shape"
-            data_shape = tuple(map(int, value.strip("()").split(", ")))
-
-            # load the labels
-            label = pd.read_csv(f, index_col=0, dtype=str)
-
         # memory map the raw data
-        self.data = np.memmap(
-            self.data_path, mode="r", dtype=np.float32, shape=data_shape
-        )
-
-        assert self.data.shape[0] == label.shape[0], (
-            f"Sample count in the data ({self.data.shape[0]}) and "
-            f"label file ({label.shape[0]}) doesn't match"
-        )
-
-        self.nchannels = data_shape[2]
+        self.data = np.memmap(self.data_path, mode="r", dtype=np.float32)
+        # load metadata CSV
+        self.metadata = pd.read_csv(self.label_path, index_col=0)
 
         # potentially drop some conditions
         conditions = args.get("conditions", "all")
@@ -65,23 +48,23 @@ class RawDataset(Dataset):
         if conditions != "all":
             if not isinstance(conditions, list):
                 conditions = [conditions]
-            mask = np.zeros(label.shape[0], dtype=bool)
+            mask = np.zeros(self.metadata.shape[0], dtype=bool)
             for cond in conditions:
-                mask = mask | (label["condition"] == cond)
-            label = label[mask]
-
-        # save indices of sample with select channels and conditions
-        self.indices = label.index.values
+                mask = mask | (self.metadata["condition"] == cond)
+            self.metadata = self.metadata[mask]
 
         # create unique indices and mappings for subjects and conditions
-        self.subject_ids, self.subject_mapping = label["subject"].factorize()
-        self.condition_ids, self.condition_mapping = label["condition"].factorize()
+        self.subject_ids, self.subject_mapping = self.metadata["subject"].factorize()
+        self.condition_ids, self.condition_mapping = self.metadata[
+            "condition"
+        ].factorize()
 
-        # store channel positions
-        self.channel_positions = [
-            pickle.loads(codecs.decode(pkl.encode(), "base64"))
-            for pkl in label["channel_pos_pickle"].values
-        ]
+        # decode channel positions
+        self.metadata["channel_pos"] = self.metadata["channel_pos_pickle"].apply(
+            lambda x: pickle.loads(codecs.decode(x.encode(), "base64")).astype(
+                np.float32
+            )
+        )
 
     def class_weights(self, indices=None):
         classes = self.condition_ids
@@ -95,11 +78,13 @@ class RawDataset(Dataset):
         return (1 / counts).tolist()
 
     def __len__(self):
-        return len(self.indices)
+        return len(self.metadata)
 
     def __getitem__(self, idx):
         # read the current sample
-        x = np.array(self.data[self.indices[idx]]).astype(float)
+        metadata = self.metadata.iloc[idx]
+        x = np.array(self.data[metadata["start_idx"] : metadata["stop_idx"]])
+        x = x.reshape(-1, metadata["num_channels"])
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -107,40 +92,48 @@ class RawDataset(Dataset):
             # notch filter
             if self.notch_freq is not None:
                 x = notch_filter(
-                    x.T,
+                    x.T.astype(float),
                     self.sample_rate,
                     np.arange(self.notch_freq, self.sample_rate // 2, self.notch_freq),
                     verbose="warning",
-                ).T
+                ).T.astype(np.float32)
 
             # band pass filter
             if self.low_pass is not None or self.high_pass is not None:
                 x = filter_data(
-                    x.T,
+                    x.T.astype(float),
                     self.sample_rate,
                     self.high_pass,
                     self.low_pass,
                     verbose="warning",
-                ).T
+                ).T.astype(np.float32)
 
-        # create the channel mask
-        channel_pos = torch.from_numpy(self.channel_positions[idx].astype(np.float32))
-        mask = torch.zeros(self.nchannels, dtype=bool)
-        mask[: channel_pos.size(0)] = True
-
-        # pad the channel positions tensor
-        channel_padding = self.nchannels - channel_pos.size(0)
-        if channel_padding > 0:
-            padding = torch.zeros(channel_padding, channel_pos.size(1))
-            channel_pos = torch.cat([channel_pos, padding], dim=0)
-
-        return (
-            torch.from_numpy(x.astype(np.float32)),
-            channel_pos,
-            mask,
+        return [
+            torch.from_numpy(x),
+            torch.from_numpy(metadata["channel_pos"]),
+            torch.ones(x.shape[1], dtype=torch.bool),
             self.condition_ids[idx],
             self.subject_ids[idx],
-        )
+        ]
+
+    def collate(batch):
+        channel_counts = torch.tensor([sample[0].size(1) for sample in batch])
+        if not (channel_counts[0] == channel_counts).all():
+            max_channels = channel_counts.max()
+            # pad samples to the same channel count
+            for i in torch.where(channel_counts != max_channels)[0]:
+                num_channels = batch[i][0].size(1)
+                # pad raw data
+                padding = torch.zeros(batch[i][0].size(0), max_channels - num_channels)
+                batch[i][0] = torch.cat([batch[i][0], padding], dim=1)
+                # pad channel positions
+                padding = torch.zeros(max_channels - num_channels, 3)
+                batch[i][1] = torch.cat([batch[i][1], padding], dim=0)
+                # pad mask
+                padding = torch.zeros(max_channels - num_channels, dtype=torch.bool)
+                batch[i][2] = torch.cat([batch[i][2], padding])
+
+        return default_collate(batch)
 
     def id2subject(self, subject_id):
         # mapping from index to subject identifier

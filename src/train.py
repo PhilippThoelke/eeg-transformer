@@ -42,6 +42,7 @@ def main(args):
     train_dl = DataLoader(
         train_data,
         batch_size=args.batch_size,
+        collate_fn=RawDataset.collate,
         shuffle=True,
         num_workers=8,
         prefetch_factor=4,
@@ -54,7 +55,11 @@ def main(args):
     # val subset
     val_data = Subset(data, idx_val)
     val_dl = DataLoader(
-        val_data, batch_size=args.batch_size, num_workers=8, prefetch_factor=4
+        val_data,
+        batch_size=args.batch_size,
+        collate_fn=RawDataset.collate,
+        num_workers=8,
+        prefetch_factor=4,
     )
 
     # define model
