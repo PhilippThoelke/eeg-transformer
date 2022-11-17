@@ -245,7 +245,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--temperature",
-        default=1,
+        default=0.5,
         type=float,
         help="temperature parameter of the SimCLR method",
     )
