@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader, Subset
 import pytorch_lightning as pl
 from dataset import RawDataset
 from module import TransformerModule
+from augmentation import augmentations
 
 
 def split_data(data, val_subject_ratio):
@@ -29,6 +30,38 @@ def split_data(data, val_subject_ratio):
     return np.concatenate(train_idxs), np.concatenate(val_idxs)
 
 
+def data_augmentation(collate_fn, args):
+    def augment(batch, eps=1e-7):
+        x, ch_pos, mask, condition, subject = collate_fn(batch)
+
+        # standardize signal channel-wise
+        mean, std = x.mean(dim=(0, 1), keepdims=True), x.std(dim=(0, 1), keepdims=True)
+        x = (x - mean) / (std + eps)
+
+        # augment data
+        x_all, ch_pos_all, mask_all = [], [], []
+        for k in range(2):
+            x_aug, ch_pos_aug, mask_aug = x.clone(), ch_pos.clone(), mask.clone()
+            perm = torch.randperm(len(augmentations))
+            for j in perm[: args.num_augmentations]:
+                x_aug, ch_pos_aug, mask_aug = augmentations[j](
+                    x_aug, ch_pos_aug, mask_aug
+                )
+            x_all.append(x_aug)
+            ch_pos_all.append(ch_pos_aug)
+            mask_all.append(mask_aug)
+        x = torch.cat(x_all)
+        ch_pos = torch.cat(ch_pos_all)
+        mask = torch.cat(mask_all)
+        condition = torch.cat([condition, condition])
+        subject = torch.cat([subject, subject])
+
+        # return augmented batch
+        return x, ch_pos, mask, condition, subject
+
+    return augment
+
+
 def main(args):
     # load data
     data = RawDataset(args)
@@ -39,7 +72,7 @@ def main(args):
     train_dl = DataLoader(
         train_data,
         batch_size=args.batch_size,
-        collate_fn=RawDataset.collate,
+        collate_fn=data_augmentation(RawDataset.collate, args),
         shuffle=True,
         num_workers=8,
         prefetch_factor=4,
@@ -52,7 +85,7 @@ def main(args):
     val_dl = DataLoader(
         val_data,
         batch_size=args.batch_size,
-        collate_fn=RawDataset.collate,
+        collate_fn=data_augmentation(RawDataset.collate, args),
         num_workers=8,
         prefetch_factor=4,
     )

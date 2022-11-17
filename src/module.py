@@ -63,31 +63,12 @@ class TransformerModule(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         return self.step(batch, batch_idx, training_stage="test")
 
-    def step(self, batch, batch_idx, training_stage, eps=1e-7):
+    def step(self, batch, batch_idx, training_stage):
         x, ch_pos, mask, condition, subject = batch
-
-        # standardize signal channel-wise
-        mean, std = x.mean(dim=(0, 1), keepdims=True), x.std(dim=(0, 1), keepdims=True)
-        x = (x - mean) / (std + eps)
-
-        # apply data augmentation steps
-        x_all, ch_pos_all, mask_all = [], [], []
-        for k in range(2):
-            x_aug, ch_pos_aug, mask_aug = x.clone(), ch_pos.clone(), mask.clone()
-            perm = torch.randperm(len(augmentations))
-            for j in perm[: self.hparams.num_augmentations]:
-                x_aug, ch_pos_aug, mask_aug = augmentations[j](
-                    x_aug, ch_pos_aug, mask_aug
-                )
-            x_all.append(x_aug)
-            ch_pos_all.append(ch_pos_aug)
-            mask_all.append(mask_aug)
-        x_all = torch.cat(x_all)
-        ch_pos_all = torch.cat(ch_pos_all)
-        mask_all = torch.cat(mask_all)
+        initial_bs = x.size(0) // 2
 
         # forward pass
-        z = self(x_all, ch_pos_all, mask_all)
+        z = self(x, ch_pos, mask)
 
         # compute similarity scores
         idxs = torch.arange(z.size(0), device=z.device)
@@ -97,7 +78,7 @@ class TransformerModule(pl.LightningModule):
 
         # compute loss
         similarity = similarity.view(z.size(0), z.size(0) - 1).softmax(dim=1).view(-1)
-        mask = (idxs[0] == (idxs[1] - x.size(0))) + ((idxs[0] - x.size(0)) == idxs[1])
+        mask = (idxs[0] == (idxs[1] - initial_bs)) + ((idxs[0] - initial_bs) == idxs[1])
         loss = (-similarity[mask].log()).mean()
         self.log(f"{training_stage}_loss", loss)
 

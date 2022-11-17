@@ -22,7 +22,7 @@ def gaussian_noise_freq(x, ch_pos, mask, noise_scale=0.15):
     return torch.fft.ifft(ft, dim=1).real, ch_pos, mask
 
 
-def rescale_channels(x, ch_pos, mask, max_strength=0.3):
+def rescale(x, ch_pos, mask, max_strength=0.3):
     """Scale the signal by a random scalar around 1"""
     scalers = torch.rand(x.size(0), 1, x.size(2), device=x.device)
     scalers = scalers * 2 * max_strength + 1 - max_strength
@@ -30,11 +30,26 @@ def rescale_channels(x, ch_pos, mask, max_strength=0.3):
     return (x - mean) * scalers + mean, ch_pos, mask
 
 
+def rescale_channels(x, ch_pos, mask, max_strength=0.1):
+    """Scale channel positions by a random scalar around 1"""
+    scalers = torch.rand(ch_pos.size(0), 1, 1, device=ch_pos.device)
+    scalers = scalers * 2 * max_strength + 1 - max_strength
+    mean = ch_pos.mean(dim=1, keepdims=True)
+    return x, (ch_pos - mean) * scalers + mean, mask
+
+
 def random_mean(x, ch_pos, mask, max_strength=0.2):
     """Add a random mean to the signal"""
     means = torch.rand(x.size(0), 1, x.size(2), device=x.device)
     means = means * 2 * max_strength - max_strength
     return x + means, ch_pos, mask
+
+
+def random_mean_channels(x, ch_pos, mask, max_strength=0.1):
+    """Add a random mean to the channel positions"""
+    means = torch.rand(ch_pos.size(0), 1, 1, device=x.device)
+    means = means * 2 * max_strength - max_strength
+    return x, ch_pos + means, mask
 
 
 def shift_samples(x, ch_pos, mask, max_n=10):
@@ -87,8 +102,10 @@ augmentations = [
     gaussian_noise,
     gaussian_noise_channels,
     gaussian_noise_freq,
+    rescale,
     rescale_channels,
     random_mean,
+    random_mean_channels,
     shift_samples,
     flip_sign,
     resample,
