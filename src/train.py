@@ -104,6 +104,7 @@ def main(args):
             ),
             pl.callbacks.ModelCheckpoint(monitor="val_loss", mode="min"),
         ],
+        accumulate_grad_batches=args.gradient_accumulation,
     )
 
     # store train val splits
@@ -231,10 +232,22 @@ if __name__ == "__main__":
         help="frequency at which to apply a high pass filter",
     )
     parser.add_argument(
+        "--gradient-accumulation",
+        default=10,
+        type=int,
+        help="number of gradient accumulation steps",
+    )
+    parser.add_argument(
         "--num-augmentations",
-        default=3,
+        default=2,
         type=int,
         help="number of data augmentation steps during pretraining",
+    )
+    parser.add_argument(
+        "--temperature",
+        default=1,
+        type=float,
+        help="temperature parameter of the SimCLR method",
     )
 
     args = parser.parse_args()

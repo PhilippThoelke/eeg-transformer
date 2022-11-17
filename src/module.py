@@ -70,18 +70,22 @@ class TransformerModule(pl.LightningModule):
         # forward pass
         z = self(x, ch_pos, mask)
 
-        # compute similarity scores
-        idxs = torch.arange(z.size(0), device=z.device)
-        idxs = torch.cartesian_prod(idxs, idxs).T
-        idxs = idxs[:, idxs[0] != idxs[1]]
-        similarity = torch.cosine_similarity(z[idxs[0]], z[idxs[1]])
+        # compute pairwise cosine similarity
+        similarity = F.cosine_similarity(z.unsqueeze(1), z.unsqueeze(0), dim=2)
 
-        # compute loss
-        similarity = similarity.view(z.size(0), z.size(0) - 1).softmax(dim=1).view(-1)
-        mask = (idxs[0] == (idxs[1] - initial_bs)) + ((idxs[0] - initial_bs) == idxs[1])
-        loss = (-similarity[mask].log()).mean()
+        # get nominator from positive samples
+        positives = torch.cat(
+            [torch.diag(similarity, initial_bs), torch.diag(similarity, -initial_bs)]
+        )
+        nominator = (positives / self.hparams.temperature).exp()
+        # get denominator from negative samples
+        mask = (~torch.eye(z.size(0), dtype=bool, device=z.device)).float()
+        denominator = mask * (similarity / self.hparams.temperature).exp()
+
+        # compute final loss
+        all_losses = -(nominator / denominator.sum(dim=1)).log()
+        loss = all_losses.sum() / z.size(0)
         self.log(f"{training_stage}_loss", loss)
-
         return loss
 
     def configure_optimizers(self):
