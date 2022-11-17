@@ -4,15 +4,13 @@ import torch
 from torch import nn, optim
 import torch.nn.functional as F
 import pytorch_lightning as pl
-from sklearn.metrics import confusion_matrix
-from matplotlib import pyplot as plt
+from augmentation import augmentations
 
 
 class TransformerModule(pl.LightningModule):
     def __init__(self, hparams):
         super().__init__()
         self.save_hyperparameters(hparams)
-        self.register_buffer("class_weights", torch.tensor(self.hparams.class_weights))
 
         # transformer encoder
         self.encoder = EEGEncoder(
@@ -23,49 +21,38 @@ class TransformerModule(pl.LightningModule):
             dropout=self.hparams.dropout,
         )
 
-        # output network
-        self.outnet = nn.Sequential(
-            nn.Linear(self.hparams.embedding_dim, 64),
+        # projection head
+        self.projection = nn.Sequential(
+            nn.Linear(self.hparams.embedding_dim, self.hparams.embedding_dim),
             nn.ReLU(),
-            nn.Linear(64, len(self.hparams.conditions)),
+            nn.Linear(self.hparams.embedding_dim, self.hparams.embedding_dim),
         )
 
-        self.confusion_matrices = {}
-
-    def forward(self, x, ch_pos, mask=None, return_logits=False, eps=1e-7):
+    def forward(self, x, ch_pos, mask=None):
         """
         Perform a forward pass of the EEG Transformer.
 
         Letters in the shape descriptions stand for
-        N - batch size, S - EEG samples, C - channels, O - output classes
+        N - batch size, S - EEG samples, C - channels, L - latent dimension
 
         Parameters:
             x (torch.Tensor): raw EEG epochs with shape (N, S, C)
             ch_pos (torch.Tensor): channel positions in 3D space normalized to the unit cube (N, C, 3)
             mask (torch.Tensor, optional): boolean mask to hide padded channels from the attention mechanism (N, C)
-            return_logits (bool, optional): if True, return unnormalized logits (otherwise softmax scores are returned)
-            eps (float, optional): small epsilon to avoid division by zero when normalizing the data
 
         Returns:
-            y (torch.Tensor): logits or softmax scores depending on the return_logits parameter (N, O)
+            z (torch.Tensor): latent representation of input samples (N, L)
         """
-        # standardize channels
-        mean, std = x.mean(dim=(0, 1), keepdims=True), x.std(dim=(0, 1), keepdims=True)
-        x = (x - mean) / (std + eps)
-
         # reshape x from (N, S, C) to (C, N, S)
         x = x.permute(2, 0, 1)
         # reshape ch_pos from (N, C, 3) to (C, N, 3)
         ch_pos = ch_pos.permute(1, 0, 2)
 
         # apply encoder model
-        x = self.encoder(x, ch_pos, mask)
-        # apply output model
-        y = self.outnet(x)
-
-        if return_logits:
-            return y
-        return y.softmax(dim=-1)
+        z = self.encoder(x, ch_pos, mask)
+        # apply projection head
+        z = self.projection(z)
+        return z
 
     def training_step(self, batch, batch_idx):
         return self.step(batch, batch_idx, training_stage="train")
@@ -76,53 +63,43 @@ class TransformerModule(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         return self.step(batch, batch_idx, training_stage="test")
 
-    def step(self, batch, batch_idx, training_stage):
+    def step(self, batch, batch_idx, training_stage, eps=1e-7):
         x, ch_pos, mask, condition, subject = batch
 
-        # regularization
-        if training_stage == "train":
-            # EEG noise regularization
-            if self.hparams.eeg_noise > 0:
-                noise = torch.randn_like(x) * x.std()
-                x = x + noise * self.hparams.eeg_noise
-            # channel position noise regularization
-            if self.hparams.channel_noise > 0:
-                noise = torch.randn_like(ch_pos) * ch_pos.std()
-                ch_pos = ch_pos + noise * self.hparams.channel_noise
-            # token dropout via masking
-            if self.hparams.token_dropout > 0:
-                if mask is None:
-                    # initialize mask
-                    mask = torch.ones(
-                        x.size(0), x.size(2), dtype=torch.bool, device=x.device
-                    )
-                dropout_mask = (
-                    torch.rand(mask.shape, device=mask.device)
-                    < self.hparams.token_dropout
+        # standardize signal channel-wise
+        mean, std = x.mean(dim=(0, 1), keepdims=True), x.std(dim=(0, 1), keepdims=True)
+        x = (x - mean) / (std + eps)
+
+        # apply data augmentation steps
+        x_all, ch_pos_all, mask_all = [], [], []
+        for k in range(2):
+            x_aug, ch_pos_aug, mask_aug = x.clone(), ch_pos.clone(), mask.clone()
+            perm = torch.randperm(len(augmentations))
+            for j in perm[: self.hparams.num_augmentations]:
+                x_aug, ch_pos_aug, mask_aug = augmentations[j](
+                    x_aug, ch_pos_aug, mask_aug
                 )
-                mask[dropout_mask] = False
+            x_all.append(x_aug)
+            ch_pos_all.append(ch_pos_aug)
+            mask_all.append(mask_aug)
+        x_all = torch.cat(x_all)
+        ch_pos_all = torch.cat(ch_pos_all)
+        mask_all = torch.cat(mask_all)
 
         # forward pass
-        logits = self(x, ch_pos, mask, return_logits=True)
+        z = self(x_all, ch_pos_all, mask_all)
 
-        # loss
-        loss = F.cross_entropy(logits, condition, self.class_weights)
+        # compute similarity scores
+        idxs = torch.arange(z.size(0), device=z.device)
+        idxs = torch.cartesian_prod(idxs, idxs).T
+        idxs = idxs[:, idxs[0] != idxs[1]]
+        similarity = torch.cosine_similarity(z[idxs[0]], z[idxs[1]])
+
+        # compute loss
+        similarity = similarity.view(z.size(0), z.size(0) - 1).softmax(dim=1).view(-1)
+        mask = (idxs[0] == (idxs[1] - x.size(0))) + ((idxs[0] - x.size(0)) == idxs[1])
+        loss = (-similarity[mask].log()).mean()
         self.log(f"{training_stage}_loss", loss)
-
-        # accuracy
-        acc = (logits.argmax(dim=-1) == condition).float().mean()
-        self.log(f"{training_stage}_acc", acc)
-
-        # accumulate confusion matrices
-        cm = confusion_matrix(
-            condition.cpu(),
-            logits.argmax(dim=-1).cpu(),
-            labels=range(len(self.hparams.conditions)),
-        )
-        if training_stage not in self.confusion_matrices:
-            self.confusion_matrices[training_stage] = cm
-        else:
-            self.confusion_matrices[training_stage] += cm
 
         return loss
 
@@ -146,28 +123,6 @@ class TransformerModule(pl.LightningModule):
         for i, opt in enumerate(optimizers):
             name = "lr" if len(optimizers) == 1 else f"lr_{i}"
             self.log(name, opt.param_groups[0]["lr"])
-
-    def validation_epoch_end(self, outputs):
-        for stage, cm in self.confusion_matrices.items():
-            # normalize confusion matrix
-            counts = cm.sum(axis=1, keepdims=True)
-            cm = cm / np.where(counts, counts, 1)
-
-            # create confusion matrix plot
-            conditions = self.hparams.conditions
-            fig, ax = plt.subplots()
-            ax.imshow(cm)
-            ax.set_xticks(range(len(conditions)), conditions, rotation=90)
-            ax.set_yticks(range(len(conditions)), conditions)
-            ax.set_xlabel("prediction")
-            ax.set_ylabel("ground truth")
-            ax.xaxis.set_label_position("top")
-            ax.yaxis.set_label_position("right")
-            fig.tight_layout()
-
-            # log the confusion matrix
-            self.logger.experiment.add_figure(f"{stage}_cm", fig)
-        self.confusion_matrices = {}
 
     def optimizer_step(self, *args, **kwargs):
         # learning rate warmup

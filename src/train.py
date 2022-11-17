@@ -34,9 +34,6 @@ def main(args):
     data = RawDataset(args)
     idx_train, idx_val = split_data(data, args.val_subject_ratio)
 
-    # make sure args contains a list of conditions, not "all"
-    args.conditions = data.condition_mapping.tolist()
-
     # train subset
     train_data = Subset(data, idx_train)
     train_dl = DataLoader(
@@ -47,8 +44,6 @@ def main(args):
         num_workers=8,
         prefetch_factor=4,
     )
-    # store training class weights for use inside the lightning module
-    args.class_weights = data.class_weights(idx_train)
     # store the size of a single token
     args.token_size = train_data[0][0].shape[0]
 
@@ -161,28 +156,10 @@ if __name__ == "__main__":
         help="dropout ratio",
     )
     parser.add_argument(
-        "--token-dropout",
-        default=0.1,
-        type=float,
-        help="dropout ratio for entire tokens",
-    )
-    parser.add_argument(
         "--weight-decay",
         default=0.3,
         type=float,
         help="weight decay",
-    )
-    parser.add_argument(
-        "--eeg-noise",
-        default=0.2,
-        type=float,
-        help="scale of noise regularization applied to EEG data",
-    )
-    parser.add_argument(
-        "--channel-noise",
-        default=0.0,
-        type=float,
-        help="scale of noise regularization applied to channel positions",
     )
     parser.add_argument(
         "--warmup-steps",
@@ -221,11 +198,10 @@ if __name__ == "__main__":
         help="frequency at which to apply a high pass filter",
     )
     parser.add_argument(
-        "--conditions",
-        default="all",
-        type=str,
-        help="list of conditions to use",
-        nargs="+",
+        "--num-augmentations",
+        default=3,
+        type=int,
+        help="number of data augmentation steps during pretraining",
     )
 
     args = parser.parse_args()

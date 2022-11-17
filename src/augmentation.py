@@ -4,7 +4,7 @@ from torchaudio.functional import resample as _resample
 
 def gaussian_noise(x, ch_pos, mask, noise_scale=0.1):
     """Add Gaussian noise to the signal"""
-    return x + torch.randn_like(x) * x.std() * noise_scale, ch_pos
+    return x + torch.randn_like(x) * x.std() * noise_scale, ch_pos, mask
 
 
 def gaussian_noise_channels(x, ch_pos, mask, noise_scale=0.1):
@@ -48,8 +48,8 @@ def shift_samples(x, ch_pos, mask, max_n=10):
 
 def flip_sign(x, ch_pos, mask, prob=0.2):
     """Randomly flip the sign of the signal"""
-    mask = torch.rand(x.size(0), device=x.device) < prob
-    x[mask] = x[mask] * -1
+    flip_mask = torch.rand(x.size(0), device=x.device) < prob
+    x[flip_mask] = x[flip_mask] * -1
     return x, ch_pos, mask
 
 
@@ -82,6 +82,19 @@ def channel_dropout(x, ch_pos, mask, prob=0.1):
     mask[dropout_mask] = False
     return x, ch_pos, mask
 
+
+augmentations = [
+    gaussian_noise,
+    gaussian_noise_channels,
+    gaussian_noise_freq,
+    rescale_channels,
+    random_mean,
+    shift_samples,
+    flip_sign,
+    resample,
+    temporal_dropout,
+    channel_dropout,
+]
 
 # TODO
 # - random low-pass, high-pass, notch-filtering
