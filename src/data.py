@@ -1,4 +1,4 @@
-from os.path import join
+from os.path import join, exists
 from abc import ABC, abstractmethod
 import pickle
 import codecs
@@ -76,6 +76,13 @@ class ProcessedDataset(ABC):
             raw_dset = self.instantiate(subject_id, **self.instantiate_kwargs)
             yield self.preprocess(raw_dset)
 
+    def idx2subj(self, idx):
+        if idx >= len(self):
+            raise IndexError()
+        elif idx < -len(self):
+            raise IndexError()
+        return self.subject_ids[idx]
+
     @abstractmethod
     def instantiate(self, subject_id):
         """Implement this function to download and instantiate the dataset"""
@@ -148,11 +155,15 @@ class ProcessedDataset(ABC):
                 ch_pos = montage.get_positions()["ch_pos"]
                 ch_pos = np.stack([ch_pos[ch_name] for ch_name in raw_epoch.ch_names])
                 desc["ch_pos"] = ch_pos
-                desc["dataset"] = self.__class__.__name__
+                desc["dataset"] = self.name
 
                 # append current epoch as a BaseDataset
                 epochs.append(BaseDataset(raw_epoch, desc, target_name="label"))
         return epochs
+
+    @property
+    def name(self):
+        return self.__class__.__name__
 
     def __len__(self):
         return self.max_subjects if self.max_subjects > 0 else len(self.subject_ids)
@@ -271,24 +282,54 @@ if __name__ == "__main__":
     datasets = [
         PhysionetMI(sfreq=sfreq),
         Zhou2016(sfreq=sfreq),
-        MAMEM1(sfreq=sfreq),
-        RestingCognitive(sfreq=sfreq),
+        # MAMEM1(sfreq=sfreq),
+        # RestingCognitive(sfreq=sfreq),
     ]
 
     # prepare processing the data
     mne.set_log_level("ERROR")
-    fname = "-".join(d.__class__.__name__ for d in datasets)
+    fname = "-".join(d.name for d in datasets)
     memmap_len = 0
     metadata = []
-    pbar = tqdm(total=sum(len(d) for d in datasets))
     stage = dict()
 
+    if exists(join(result_dir, "raw-" + fname + ".dat")):
+        print("Found existing dataset with the same name. Extending...")
+        # get size of existing database
+        memmap_len = np.memmap(
+            join(result_dir, "raw-" + fname + ".dat"), dtype=np.float32, mode="r"
+        ).shape[0]
+        # load existing metadata file
+        metadata = pd.read_csv(
+            join(result_dir, "label-" + fname + ".csv"), index_col=0
+        ).values.tolist()
+
+        max_idx = max(row[4] for row in metadata)
+        assert memmap_len >= max_idx, (
+            f"The dataset is corrupted. The data file size ({memmap_len}) "
+            f"is smaller than the largest index in the metadata file ({max_idx})."
+        )
+
+        if memmap_len > max_idx:
+            print(
+                f"Data file ({memmap_len}) is larger than the largest index in "
+                f"the metadata file ({max_idx}). The data file will be truncated."
+            )
+            memmap_len = max_idx
+
     # iterate all data
+    pbar = tqdm(total=sum(len(d) for d in datasets))
     for dset in datasets:
         subj_iter = dset.iter_subjects()
-        for subj_idx in range(len(dset)):
-            stage["dataset"] = dset.__class__.__name__
+        for idx in range(len(dset)):
+            subj_idx = dset.idx2subj(idx)
+            stage["dataset"] = dset.name
             stage["subject"] = subj_idx
+
+            if f"{dset.name}-{subj_idx}" in [row[0] for row in metadata]:
+                # subject is already present in the metadata file
+                pbar.update()
+                continue
 
             # retrieve data and preprocess for the current subject
             stage["stage"] = "preprocessing"
@@ -308,8 +349,7 @@ if __name__ == "__main__":
                 )
             except:
                 print(
-                    f"ERROR during windowing: dataset {dset.__class__.__name__}"
-                    f", subject {subj_idx}"
+                    f"ERROR during windowing: dataset {dset.name}, subject {subj_idx}"
                 )
                 pbar.update()
                 continue
