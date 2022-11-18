@@ -282,8 +282,8 @@ if __name__ == "__main__":
     datasets = [
         PhysionetMI(sfreq=sfreq),
         Zhou2016(sfreq=sfreq),
-        # MAMEM1(sfreq=sfreq),
-        # RestingCognitive(sfreq=sfreq),
+        MAMEM1(sfreq=sfreq),
+        RestingCognitive(sfreq=sfreq),
     ]
 
     # prepare processing the data
