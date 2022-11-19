@@ -12,7 +12,7 @@ def gaussian_noise_channels(x, ch_pos, mask, noise_scale=0.1):
     return x, ch_pos + torch.randn_like(ch_pos) * ch_pos.std() * noise_scale, mask
 
 
-def gaussian_noise_freq(x, ch_pos, mask, noise_scale=0.15):
+def gaussian_noise_freq(x, ch_pos, mask, noise_scale=0.12):
     """Add Gaussian noise to the Fourier transformed signal and
     transform back into the temporal domain"""
     ft = torch.fft.fft(x, dim=1)
@@ -38,7 +38,7 @@ def rescale_channels(x, ch_pos, mask, max_strength=0.1):
     return x, (ch_pos - mean) * scalers + mean, mask
 
 
-def random_mean(x, ch_pos, mask, max_strength=0.2):
+def random_mean(x, ch_pos, mask, max_strength=0.15):
     """Add a random mean to the signal"""
     means = torch.rand(x.size(0), 1, x.size(2), device=x.device)
     means = means * 2 * max_strength - max_strength
@@ -52,7 +52,7 @@ def random_mean_channels(x, ch_pos, mask, max_strength=0.1):
     return x, ch_pos + means, mask
 
 
-def shift_samples(x, ch_pos, mask, max_n=10):
+def shift_samples(x, ch_pos, mask, max_n=16):
     """Randomly shift the signal forwards of backwards in time"""
     shifts = torch.randint(1, max_n + 1, (x.size(0),), device=x.device)
     shifts[torch.rand(shifts.shape, device=x.device) < 0.5] *= -1
@@ -61,14 +61,14 @@ def shift_samples(x, ch_pos, mask, max_n=10):
     return x, ch_pos, mask
 
 
-def flip_sign(x, ch_pos, mask, prob=0.2):
+def flip_sign(x, ch_pos, mask, prob=0.5):
     """Randomly flip the sign of the signal"""
     flip_mask = torch.rand(x.size(0), device=x.device) < prob
     x[flip_mask] = x[flip_mask] * -1
     return x, ch_pos, mask
 
 
-def resample(x, ch_pos, mask, max_change_pct=30):
+def resample(x, ch_pos, mask, max_change_pct=40):
     """Downsample the signal to a lower frequency,
     follwed by upsampling to the original sampling rate"""
     x = x.permute(0, 2, 1).contiguous()
@@ -89,7 +89,7 @@ def temporal_dropout(x, ch_pos, mask, max_samples=64, prob=0.2):
     return x, ch_pos, mask
 
 
-def channel_dropout(x, ch_pos, mask, prob=0.1):
+def channel_dropout(x, ch_pos, mask, prob=0.2):
     """Randomly mask out channels"""
     if mask is None:
         mask = torch.ones(x.size(0), x.size(2), dtype=torch.bool, device=x.device)
