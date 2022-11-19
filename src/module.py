@@ -83,6 +83,10 @@ class TransformerModule(pl.LightningModule):
         y_pred = self.dataset_predictor(-z + (2 * z).detach())
         dataset_loss = F.cross_entropy(y_pred, dataset, self.dataset_weights)
         self.log(f"{training_stage}_dataset_loss", dataset_loss)
+        self.log(
+            f"{training_stage}_dataset_acc",
+            (y_pred.argmax(dim=1) == dataset).float().mean(),
+        )
 
         # apply projection head
         z_proj = self.projection(z)
