@@ -32,7 +32,7 @@ def split_data(data, val_subject_ratio):
 
 def data_augmentation(collate_fn, args):
     def augment(batch, eps=1e-7):
-        x, ch_pos, mask, condition, subject = collate_fn(batch)
+        x, ch_pos, mask, condition, subject, dataset = collate_fn(batch)
 
         # standardize signal channel-wise
         mean, std = x.mean(dim=(0, 1), keepdims=True), x.std(dim=(0, 1), keepdims=True)
@@ -55,9 +55,10 @@ def data_augmentation(collate_fn, args):
         mask = torch.cat(mask_all)
         condition = torch.cat([condition, condition])
         subject = torch.cat([subject, subject])
+        dataset = torch.cat([dataset, dataset])
 
         # return augmented batch
-        return x, ch_pos, mask, condition, subject
+        return x, ch_pos, mask, condition, subject, dataset
 
     return augment
 
@@ -77,6 +78,8 @@ def main(args):
         num_workers=8,
         prefetch_factor=4,
     )
+    # fetch dataset weights depending on their size
+    args.dataset_weights = data.dataset_weights(idx_train)
     # store the size of a single token
     args.token_size = train_data[0][0].shape[0]
 

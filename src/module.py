@@ -11,6 +11,9 @@ class TransformerModule(pl.LightningModule):
     def __init__(self, hparams):
         super().__init__()
         self.save_hyperparameters(hparams)
+        self.register_buffer(
+            "dataset_weights", torch.tensor(self.hparams.dataset_weights)
+        )
 
         # transformer encoder
         self.encoder = EEGEncoder(
@@ -26,6 +29,15 @@ class TransformerModule(pl.LightningModule):
             nn.Linear(self.hparams.embedding_dim, self.hparams.embedding_dim),
             nn.ReLU(),
             nn.Linear(self.hparams.embedding_dim, self.hparams.embedding_dim),
+        )
+
+        # dataset prediction network
+        self.dataset_predictor = nn.Sequential(
+            nn.Linear(self.hparams.embedding_dim, self.hparams.embedding_dim // 2),
+            nn.ReLU(),
+            nn.Linear(
+                self.hparams.embedding_dim // 2, len(self.hparams.dataset_weights)
+            ),
         )
 
     def forward(self, x, ch_pos, mask=None):
@@ -49,10 +61,7 @@ class TransformerModule(pl.LightningModule):
         ch_pos = ch_pos.permute(1, 0, 2)
 
         # apply encoder model
-        z = self.encoder(x, ch_pos, mask)
-        # apply projection head
-        z = self.projection(z)
-        return z
+        return self.encoder(x, ch_pos, mask)
 
     def training_step(self, batch, batch_idx):
         return self.step(batch, batch_idx, training_stage="train")
@@ -64,14 +73,24 @@ class TransformerModule(pl.LightningModule):
         return self.step(batch, batch_idx, training_stage="test")
 
     def step(self, batch, batch_idx, training_stage):
-        x, ch_pos, mask, condition, subject = batch
+        x, ch_pos, mask, condition, subject, dataset = batch
         initial_bs = x.size(0) // 2
 
         # forward pass
         z = self(x, ch_pos, mask)
 
+        # apply dataset prediction network and reverse gradients
+        y_pred = self.dataset_predictor(-z + (2 * z).detach())
+        dataset_loss = F.cross_entropy(y_pred, dataset, self.dataset_weights)
+        self.log(f"{training_stage}_dataset_loss", dataset_loss)
+
+        # apply projection head
+        z_proj = self.projection(z)
+
         # compute pairwise cosine similarity
-        similarity = F.cosine_similarity(z.unsqueeze(1), z.unsqueeze(0), dim=2)
+        similarity = F.cosine_similarity(
+            z_proj.unsqueeze(1), z_proj.unsqueeze(0), dim=2
+        )
 
         # get nominator from positive samples
         positives = torch.cat(
@@ -79,14 +98,14 @@ class TransformerModule(pl.LightningModule):
         )
         nominator = (positives / self.hparams.temperature).exp()
         # get denominator from negative samples
-        mask = (~torch.eye(z.size(0), dtype=bool, device=z.device)).float()
+        mask = (~torch.eye(z_proj.size(0), dtype=bool, device=z_proj.device)).float()
         denominator = mask * (similarity / self.hparams.temperature).exp()
 
         # compute final loss
         all_losses = -(nominator / denominator.sum(dim=1)).log()
-        loss = all_losses.sum() / z.size(0)
+        loss = all_losses.sum() / z_proj.size(0)
         self.log(f"{training_stage}_loss", loss)
-        return loss
+        return loss + dataset_loss
 
     def configure_optimizers(self):
         # optimizer
@@ -208,6 +227,20 @@ class EEGEncoder(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, ch_pos, mask=None):
+        """
+        Perform a forward pass of the EEG Transformer Encoder.
+
+        Letters in the shape descriptions stand for
+        N - batch size, S - EEG samples, C - channels, L - latent dimension
+
+        Parameters:
+            x (torch.Tensor): raw EEG epochs with shape (C, N, S)
+            ch_pos (torch.Tensor): channel positions in 3D space normalized to the unit cube (C, N, 3)
+            mask (torch.Tensor, optional): boolean mask to hide padded channels from the attention mechanism (N, C)
+
+        Returns:
+            z (torch.Tensor): latent representation of input samples (N, L)
+        """
         # linear projection into embedding dimension
         x = self.in_proj(x)
         # add positional encoding

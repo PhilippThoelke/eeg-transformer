@@ -53,11 +53,14 @@ class RawDataset(Dataset):
                 mask = mask | (self.metadata["condition"] == cond)
             self.metadata = self.metadata[mask]
 
-        # create unique indices and mappings for subjects and conditions
+        # create unique indices and mappings for subjects, conditions and datasets
         self.subject_ids, self.subject_mapping = self.metadata["subject"].factorize()
         self.condition_ids, self.condition_mapping = self.metadata[
             "condition"
         ].factorize()
+        self.dataset_ids, self.dataset_mapping = (
+            self.metadata["subject"].apply(lambda x: x.split("-")[0]).factorize()
+        )
 
         # decode channel positions
         self.metadata["channel_pos"] = self.metadata["channel_pos_pickle"].apply(
@@ -75,6 +78,17 @@ class RawDataset(Dataset):
         # normalize class counts to be centered around one
         counts = counts / counts.mean()
         # invert normalized counts -> larger weight for underrepresented classes
+        return (1 / counts).tolist()
+
+    def dataset_weights(self, indices=None):
+        datasets = self.dataset_ids
+        if indices is not None:
+            # only select a subset
+            datasets = datasets[indices]
+        counts = np.unique(datasets, return_counts=True)[1]
+        # normalize dataset counts to be centered around one
+        counts = counts / counts.mean()
+        # invert normalized counts -> larger weight for underrepresented dataset
         return (1 / counts).tolist()
 
     def __len__(self):
@@ -114,6 +128,7 @@ class RawDataset(Dataset):
             torch.ones(x.shape[1], dtype=torch.bool),
             self.condition_ids[idx],
             self.subject_ids[idx],
+            self.dataset_ids[idx],
         ]
 
     def collate(batch):
