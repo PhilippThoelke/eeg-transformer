@@ -42,6 +42,7 @@ class ProcessedDataset(ABC):
     filter_range : tuple of low and high frequency cutoffs
     standardize_channelwise : wheter to apply channel-wise or recording-wise standardization
     clip_stds : number of standard deviations beyond EEG data is clipped
+    use_annotations: if True, drop data outside of annotations
     max_subjects : limits the number of subjects for debugging purposes
     kwargs : keyword arguments passed to the deriving dataset class
     """
@@ -52,6 +53,7 @@ class ProcessedDataset(ABC):
         filter_range=(0.5, None),
         standardize_channelwise=True,
         clip_stds=5,
+        use_annotations=True,
         max_subjects=-1,
         **kwargs,
     ):
@@ -66,6 +68,7 @@ class ProcessedDataset(ABC):
         self.filter_range = filter_range
         self.standardize_channelwise = standardize_channelwise
         self.clip_stds = clip_stds
+        self.use_annotations = use_annotations
         self.max_subjects = max_subjects
         self.instantiate_kwargs = kwargs
 
@@ -146,15 +149,21 @@ class ProcessedDataset(ABC):
 
         epochs = []
         for curr in processed_dset.datasets:
-            self.prepare_annotations(curr.raw)
-            raws = self.crop_by_annotations(curr.raw)
+            if self.use_annotations:
+                self.prepare_annotations(curr.raw)
+                raws = self.crop_by_annotations(curr.raw)
+            else:
+                raws = [(curr.raw, f"{self.name}-{curr.description['subject']}")]
             for raw_epoch, label in raws:
                 # resample after epoching to avoid event jitter
                 raw_epoch = raw_epoch.resample(self.sfreq)
 
                 # update description object
                 desc = curr.description.copy()
-                desc["label"] = self.label_transform(label, desc, raw_epoch)
+                if self.use_annotations:
+                    desc["label"] = self.label_transform(label, desc, raw_epoch)
+                else:
+                    desc["label"] = label
 
                 # add channel positions to description
                 montage = transform_to_head(raw_epoch.get_montage())
@@ -320,14 +329,15 @@ if __name__ == "__main__":
     epoch_length = 1
     epoch_overlap = 0.5
     sfreq = 128
+    use_annotations = True
 
     # define datasets
     datasets = [
-        PhysionetMI(sfreq=sfreq),
-        Zhou2016(sfreq=sfreq),
-        MAMEM1(sfreq=sfreq),
-        RestingCognitive(sfreq=sfreq),
-        SleepEpilepsy(sfreq=sfreq),
+        PhysionetMI(sfreq=sfreq, use_annotations=use_annotations),
+        Zhou2016(sfreq=sfreq, use_annotations=use_annotations),
+        MAMEM1(sfreq=sfreq, use_annotations=use_annotations),
+        RestingCognitive(sfreq=sfreq, use_annotations=use_annotations),
+        SleepEpilepsy(sfreq=sfreq, use_annotations=use_annotations),
     ]
 
     # prepare processing the data
@@ -392,6 +402,8 @@ if __name__ == "__main__":
                     n_jobs=-1,
                 )
             except:
+                # windowing might have failed due to out of memory problems,
+                # repeating with a single worker to save memory
                 windows = create_fixed_length_windows(
                     BaseConcatDataset(subj),
                     window_size_samples=int(sfreq * epoch_length),
