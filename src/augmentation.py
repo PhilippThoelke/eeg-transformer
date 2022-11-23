@@ -98,6 +98,26 @@ def channel_dropout(x, ch_pos, mask, prob=0.2):
     return x, ch_pos, mask
 
 
+def randomize_phase(x, ch_pos, mask, strength=0.5):
+    """Randomize the Fourier phase of the EEG"""
+    # transform the data into frequency domain
+    ft = torch.fft.fft(x, dim=1)
+    # generate random rotations
+    segment_size = ft.size(1) // 2 - 1 if ft.size(1) % 2 == 0 else (ft.size(1) - 1) // 2
+    phase_segment = torch.rand(ft.size(0), segment_size, 1) * torch.pi * 2j
+    # combine random segments to match Fourier phase
+    phase_segments = [
+        torch.zeros(ft.size(0), 1, 1),
+        phase_segment,
+        torch.zeros(ft.size(0), 1 if ft.size(1) % 2 == 0 else 0, 1),
+        -torch.flip(phase_segment, (1,)),
+    ]
+    random_phase = torch.cat(phase_segments, dim=1)
+    # transform back into the time domain
+    x = torch.fft.ifft(ft * (random_phase * strength).exp(), dim=1).real
+    return x, ch_pos, mask
+
+
 augmentations = [
     gaussian_noise,
     gaussian_noise_channels,
@@ -111,8 +131,5 @@ augmentations = [
     resample,
     temporal_dropout,
     channel_dropout,
+    randomize_phase,
 ]
-
-# TODO
-# - random low-pass, high-pass, notch-filtering
-# - randomize phase in frequency domain (same for all channels)
