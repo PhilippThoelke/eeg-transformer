@@ -1,4 +1,4 @@
-from os.path import exists
+from os.path import exists, expanduser
 import numpy as np
 import pandas as pd
 import pickle
@@ -18,8 +18,8 @@ class RawDataset(Dataset):
             "data_path" in args and "label_path" in args
         ), "Arguments require at least data_path and label_path to be defined"
 
-        self.data_path = args.get("data_path")
-        self.label_path = args.get("label_path")
+        self.data_path = expanduser(args.get("data_path"))
+        self.label_path = expanduser(args.get("label_path"))
         self.sample_rate = args.get("sample_rate")
         self.notch_freq = args.get("notch_freq")
         self.low_pass = args.get("low_pass")
