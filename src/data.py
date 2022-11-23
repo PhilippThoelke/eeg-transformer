@@ -1,5 +1,6 @@
 from os.path import join, exists
 from abc import ABC, abstractmethod
+import hashlib
 import pickle
 import codecs
 from tqdm import tqdm
@@ -342,7 +343,9 @@ if __name__ == "__main__":
 
     # prepare processing the data
     mne.set_log_level("ERROR")
-    fname = "-".join(d.name for d in datasets)
+    arg_hash = f"{epoch_length}-{epoch_overlap}-{sfreq}-{use_annotations}"
+    arg_hash = hashlib.md5(arg_hash.encode()).hexdigest()
+    fname = "-".join(d.name for d in datasets) + "_" + arg_hash
     memmap_len = 0
     metadata = []
     stage = dict()
