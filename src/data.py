@@ -321,6 +321,52 @@ class SleepEpilepsy(ProcessedDataset):
         return dset
 
 
+class GoNogo(ProcessedDataset):
+    line_freq = 50
+    subject_ids = list(range(2, 16))
+
+    def instantiate(self, subject_id):
+        subject_id_bids = f"{subject_id:03}"
+        dataset_id = "ds002680"
+        root = join(".", dataset_id)
+        sub_dir = f"sub-{subject_id_bids}"
+        # download current subject
+        # openneuro.download(dataset=dataset_id, target_dir=root, include=sub_dir)
+
+        paths = BIDSPath(
+            subject=subject_id_bids, datatype="eeg", suffix="eeg", root=root
+        )
+
+        raw_datasets = []
+        for path in paths.match():
+            raw = read_raw_bids(path)
+            raw.set_channel_types({ch: "eeg" for ch in raw.info["ch_names"]})
+
+            # set montage
+            raw.set_montage(
+                mne.channels.make_dig_montage(
+                    {ch["ch_name"]: ch["loc"][:3] / 10 for ch in raw.info["chs"]}
+                )
+            )
+
+            raw_datasets.append(BaseDataset(raw))
+
+        # make sure all raws are consistent
+        line_freqs = [d.raw.info["line_freq"] for d in raw_datasets]
+        assert all(self.line_freq == lf for lf in line_freqs)
+
+        dset = BaseConcatDataset(raw_datasets)
+        # create dataset description
+        desc = pd.DataFrame([subject_id] * len(dset.description), columns=["subject"])
+        dset.set_description(desc)
+        return dset
+
+    def prepare_annotations(self, raw):
+        raise RuntimeError(
+            "Using annotations is currently not implemented for this dataset"
+        )
+
+
 # TODO datasets:
 # https://openneuro.org/datasets/ds004186
 
@@ -330,7 +376,7 @@ if __name__ == "__main__":
     epoch_length = 1
     epoch_overlap = 0.5
     sfreq = 128
-    use_annotations = True
+    use_annotations = False
 
     # define datasets
     datasets = [
@@ -339,6 +385,7 @@ if __name__ == "__main__":
         MAMEM1(sfreq=sfreq, use_annotations=use_annotations),
         RestingCognitive(sfreq=sfreq, use_annotations=use_annotations),
         SleepEpilepsy(sfreq=sfreq, use_annotations=use_annotations),
+        GoNogo(sfreq=sfreq, use_annotations=use_annotations),
     ]
 
     # prepare processing the data
