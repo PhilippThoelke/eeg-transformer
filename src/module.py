@@ -120,6 +120,7 @@ class TransformerModule(pl.LightningModule):
         )
         # learning rate scheduler
         opt.param_groups[0]["initial_lr"] = self.hparams.learning_rate
+        # TODO: cosine annealing lr scheduler
         scheduler = optim.lr_scheduler.ExponentialLR(opt, gamma=self.hparams.lr_decay)
         return dict(optimizer=opt, lr_scheduler=scheduler, monitor="train_loss")
 
