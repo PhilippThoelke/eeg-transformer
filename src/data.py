@@ -4,6 +4,7 @@ import pickle
 import codecs
 from tqdm import tqdm
 import mne
+from mne.channels import make_standard_montage
 from mne.channels.montage import transform_to_head
 import numpy as np
 import pandas as pd
@@ -113,6 +114,10 @@ class ProcessedDataset(ABC):
 
     def preprocess(self, raw_dset):
         """Apply preprocessing and extract epochs"""
+        if isinstance(raw_dset, BaseDataset):
+            raw_dset = BaseConcatDataset([raw_dset])
+
+        # define preprocessing steps
         preprocessors = []
         if self.line_freq is not None:
             preprocessors.append(
@@ -136,6 +141,7 @@ class ProcessedDataset(ABC):
         preprocessors.append(
             Preprocessor(np.clip, a_min=-self.clip_stds, a_max=self.clip_stds)
         )
+        # apply preprocessing
         processed_dset = preprocess(raw_dset, preprocessors)
 
         epochs = []
@@ -272,10 +278,47 @@ class RestingCognitive(ProcessedDataset):
         return dset
 
 
+class SleepEpilepsy(ProcessedDataset):
+    line_freq = 50
+    subject_ids = list(range(1, 31))
+
+    def instantiate(self, subject_id):
+        subject_id_bids = f"{subject_id:02}"
+        dataset_id = "ds003555"
+        root = join(".", dataset_id)
+        sub_dir = f"sub-{subject_id_bids}"
+        # download current subject
+        openneuro.download(dataset=dataset_id, target_dir=root, include=sub_dir)
+
+        paths = BIDSPath(
+            subject=subject_id_bids, datatype="eeg", suffix="eeg", root=root
+        ).match()
+        assert len(paths) == 1, f"Expected 1 EEG recording, found {len(paths)}"
+
+        raw = read_raw_bids(paths[0])
+        # set annotations according to the task
+        raw.set_annotations(
+            mne.Annotations([raw.times.min()], [raw.times.max()], [paths[0].task])
+        )
+        # drop T1 and T2 channels
+        raw.drop_channels(["T1", "T2"])
+        # set montage
+        raw.set_montage(make_standard_montage("standard_1020"))
+
+        # create dataset
+        dset = BaseDataset(raw)
+        dset.set_description(dict(subject=subject_id))
+        return dset
+
+
+# TODO datasets:
+# https://openneuro.org/datasets/ds004186
+
+
 if __name__ == "__main__":
     result_dir = "data/"
-    epoch_length = 2
-    epoch_overlap = 0.3
+    epoch_length = 1
+    epoch_overlap = 0.5
     sfreq = 128
 
     # define datasets
@@ -284,6 +327,7 @@ if __name__ == "__main__":
         Zhou2016(sfreq=sfreq),
         MAMEM1(sfreq=sfreq),
         RestingCognitive(sfreq=sfreq),
+        SleepEpilepsy(sfreq=sfreq),
     ]
 
     # prepare processing the data
@@ -348,11 +392,13 @@ if __name__ == "__main__":
                     n_jobs=-1,
                 )
             except:
-                print(
-                    f"ERROR during windowing: dataset {dset.name}, subject {subj_idx}"
+                windows = create_fixed_length_windows(
+                    BaseConcatDataset(subj),
+                    window_size_samples=int(sfreq * epoch_length),
+                    window_stride_samples=int(sfreq * epoch_overlap),
+                    drop_last_window=True,
+                    n_jobs=1,
                 )
-                pbar.update()
-                continue
 
             # extract raw EEG and metadata
             stage["stage"] = "processing"
