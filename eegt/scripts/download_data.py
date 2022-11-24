@@ -73,13 +73,10 @@ class ProcessedDataset(ABC):
         self.max_subjects = max_subjects
         self.instantiate_kwargs = kwargs
 
-    def iter_subjects(self):
-        subject_ids = self.subject_ids
-        if self.max_subjects > 0:
-            subject_ids = self.subject_ids[: self.max_subjects]
-        for subject_id in subject_ids:
-            raw_dset = self.instantiate(subject_id, **self.instantiate_kwargs)
-            yield self.preprocess(raw_dset)
+    def load_subject(self, subject_id):
+        """subject_id is expected to be the id associated with the dataset, not an index"""
+        raw_dset = self.instantiate(subject_id, **self.instantiate_kwargs)
+        return self.preprocess(raw_dset)
 
     def idx2subj(self, idx):
         if idx >= len(self):
@@ -457,7 +454,6 @@ if __name__ == "__main__":
     # iterate all data
     pbar = tqdm(total=sum(len(d) for d in datasets))
     for dset in datasets:
-        subj_iter = dset.iter_subjects()
         for idx in range(len(dset)):
             subj_idx = dset.idx2subj(idx)
             stage["dataset"] = dset.name
@@ -471,7 +467,7 @@ if __name__ == "__main__":
             # retrieve data and preprocess for the current subject
             stage["stage"] = "preprocessing"
             pbar.set_postfix(stage)
-            subj = next(subj_iter)
+            subj = dset.load_subject(subj_idx)
 
             # extract windows from epochs
             stage["stage"] = "windowing"
