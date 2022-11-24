@@ -99,136 +99,135 @@ def main(args):
 
 
 if __name__ == "__main__":
+
+    def add_default_args(parser):
+        parser.add_argument(
+            "--data-path",
+            type=str,
+            required=True,
+            help="path to the memory mapped data file",
+        )
+        parser.add_argument(
+            "--label-path",
+            type=str,
+            required=True,
+            help="path to the csv file containing labels",
+        )
+        parser.add_argument(
+            "--learning-rate",
+            default=5e-4,
+            type=float,
+            help="base learning rate",
+        )
+        parser.add_argument(
+            "--early-stopping-patience",
+            default=100,
+            type=int,
+            help="number of epochs to continue training if val loss doesn't improve anymore",
+        )
+        parser.add_argument(
+            "--batch-size",
+            default=64,
+            type=int,
+            help="batch size",
+        )
+        parser.add_argument(
+            "--val-subject-ratio",
+            default=0.15,
+            type=float,
+            help="ratio of subjects to be used for validation",
+        )
+        parser.add_argument(
+            "--embedding-dim",
+            default=128,
+            type=int,
+            help="dimension of tokens inside the transformer",
+        )
+        parser.add_argument(
+            "--num-layers",
+            default=3,
+            type=int,
+            help="number of encoder layers in the transformer",
+        )
+        parser.add_argument(
+            "--num-heads",
+            default=8,
+            type=int,
+            help="number of attention heads",
+        )
+        parser.add_argument(
+            "--dropout",
+            default=0.0,
+            type=float,
+            help="dropout ratio",
+        )
+        parser.add_argument(
+            "--weight-decay",
+            default=0.3,
+            type=float,
+            help="weight decay",
+        )
+        parser.add_argument(
+            "--warmup-steps",
+            default=1000,
+            type=int,
+            help="number of steps for lr warmup",
+        )
+        parser.add_argument(
+            "--max-epochs",
+            default=1000,
+            type=int,
+            help="maximum number of epochs",
+        )
+        parser.add_argument(
+            "--sample-rate",
+            default=None,
+            type=float,
+            help="sampling frequency of the data",
+        )
+        parser.add_argument(
+            "--notch-freq",
+            default=None,
+            type=float,
+            help="frequency at which to apply a notch filter",
+        )
+        parser.add_argument(
+            "--low-pass",
+            default=None,
+            type=float,
+            help="frequency at which to apply a low pass filter",
+        )
+        parser.add_argument(
+            "--high-pass",
+            default=None,
+            type=float,
+            help="frequency at which to apply a high pass filter",
+        )
+        parser.add_argument(
+            "--gradient-accumulation",
+            default=5,
+            type=int,
+            help="number of gradient accumulation steps",
+        )
+
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--data-path",
-        type=str,
-        required=True,
-        help="path to the memory mapped data file",
+    subparsers = parser.add_subparsers(
+        title="training paradigms",
+        help="select a training paradigm for more detailed information",
+        dest="training_paradigm",
     )
-    parser.add_argument(
-        "--label-path",
-        type=str,
-        required=True,
-        help="path to the csv file containing labels",
-    )
-    parser.add_argument(
-        "--training-paradigm",
-        type=str,
-        required=True,
-        choices=[
-            pkg.name for pkg in pkgutil.walk_packages([eegt.__path__[0] + "/modules"])
-        ],
-        help="the training paradigm to use",
-    )
-    parser.add_argument(
-        "--learning-rate",
-        default=5e-4,
-        type=float,
-        help="base learning rate",
-    )
-    parser.add_argument(
-        "--early-stopping-patience",
-        default=100,
-        type=int,
-        help="number of epochs to continue training if val loss doesn't improve anymore",
-    )
-    parser.add_argument(
-        "--batch-size",
-        default=64,
-        type=int,
-        help="batch size",
-    )
-    parser.add_argument(
-        "--val-subject-ratio",
-        default=0.15,
-        type=float,
-        help="ratio of subjects to be used for validation",
-    )
-    parser.add_argument(
-        "--embedding-dim",
-        default=128,
-        type=int,
-        help="dimension of tokens inside the transformer",
-    )
-    parser.add_argument(
-        "--num-layers",
-        default=3,
-        type=int,
-        help="number of encoder layers in the transformer",
-    )
-    parser.add_argument(
-        "--num-heads",
-        default=8,
-        type=int,
-        help="number of attention heads",
-    )
-    parser.add_argument(
-        "--dropout",
-        default=0.0,
-        type=float,
-        help="dropout ratio",
-    )
-    parser.add_argument(
-        "--weight-decay",
-        default=0.3,
-        type=float,
-        help="weight decay",
-    )
-    parser.add_argument(
-        "--warmup-steps",
-        default=1000,
-        type=int,
-        help="number of steps for lr warmup",
-    )
-    parser.add_argument(
-        "--max-epochs",
-        default=1000,
-        type=int,
-        help="maximum number of epochs",
-    )
-    parser.add_argument(
-        "--sample-rate",
-        default=None,
-        type=float,
-        help="sampling frequency of the data",
-    )
-    parser.add_argument(
-        "--notch-freq",
-        default=None,
-        type=float,
-        help="frequency at which to apply a notch filter",
-    )
-    parser.add_argument(
-        "--low-pass",
-        default=None,
-        type=float,
-        help="frequency at which to apply a low pass filter",
-    )
-    parser.add_argument(
-        "--high-pass",
-        default=None,
-        type=float,
-        help="frequency at which to apply a high pass filter",
-    )
-    parser.add_argument(
-        "--gradient-accumulation",
-        default=5,
-        type=int,
-        help="number of gradient accumulation steps",
-    )
-    parser.add_argument(
-        "--num-augmentations",
-        default=2,
-        type=int,
-        help="number of data augmentation steps during pretraining",
-    )
-    parser.add_argument(
-        "--temperature",
-        default=0.5,
-        type=float,
-        help="temperature parameter of the SimCLR method",
-    )
+
+    paradigms = [
+        pkg.name for pkg in pkgutil.walk_packages([eegt.__path__[0] + "/modules"])
+    ]
+    for name in paradigms:
+        paradigm_parser = subparsers.add_parser(name)
+        # add general training arguments
+        add_default_args(paradigm_parser)
+        # add arguments specific to the training paradigm
+        paradigm = importlib.import_module(f"eegt.modules.{name}")
+        if hasattr(paradigm, "add_arguments"):
+            paradigm.add_arguments(paradigm_parser)
 
     args = parser.parse_args()
     main(args)

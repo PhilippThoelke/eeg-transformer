@@ -6,6 +6,21 @@ from eegt.model import EEGEncoder
 from eegt.augmentation import augmentations
 
 
+def add_arguments(parser):
+    parser.add_argument(
+        "--num-augmentations",
+        default=2,
+        type=int,
+        help="number of data augmentation steps during pretraining",
+    )
+    parser.add_argument(
+        "--temperature",
+        default=0.5,
+        type=float,
+        help="temperature parameter of the SimCLR method",
+    )
+
+
 def collate_decorator(collate_fn, args):
     def augment(batch, eps=1e-7):
         x, ch_pos, mask, condition, subject, dataset = collate_fn(batch)
