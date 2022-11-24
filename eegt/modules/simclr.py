@@ -18,6 +18,12 @@ def add_arguments(parser):
         type=float,
         help="temperature parameter of the SimCLR method",
     )
+    parser.add_argument(
+        "--dataset-loss-weight",
+        default=0,
+        type=float,
+        help="weighting for adversarial dataset loss (0 to disable)",
+    )
 
 
 def collate_decorator(collate_fn, args):
@@ -67,14 +73,15 @@ class LightningModule(base.LightningModule):
             nn.Linear(self.hparams.embedding_dim, self.hparams.embedding_dim),
         )
 
-        # dataset prediction network
-        self.dataset_predictor = nn.Sequential(
-            nn.Linear(self.hparams.embedding_dim, self.hparams.embedding_dim // 2),
-            nn.ReLU(),
-            nn.Linear(
-                self.hparams.embedding_dim // 2, len(self.hparams.dataset_weights)
-            ),
-        )
+        if self.hparams.dataset_loss_weight > 0:
+            # dataset prediction network
+            self.dataset_predictor = nn.Sequential(
+                nn.Linear(self.hparams.embedding_dim, self.hparams.embedding_dim // 2),
+                nn.ReLU(),
+                nn.Linear(
+                    self.hparams.embedding_dim // 2, len(self.hparams.dataset_weights)
+                ),
+            )
 
     def step(self, batch, batch_idx, training_stage):
         x, ch_pos, mask, condition, subject, dataset = batch
@@ -82,15 +89,6 @@ class LightningModule(base.LightningModule):
 
         # forward pass
         z = self(x, ch_pos, mask)
-
-        # apply dataset prediction network and reverse gradients
-        y_pred = self.dataset_predictor(-z + (2 * z).detach())
-        dataset_loss = F.cross_entropy(y_pred, dataset, self.dataset_weights)
-        self.log(f"{training_stage}_dataset_loss", dataset_loss)
-        self.log(
-            f"{training_stage}_dataset_acc",
-            (y_pred.argmax(dim=1) == dataset).float().mean(),
-        )
 
         # apply projection head
         z_proj = self.projection(z)
@@ -113,4 +111,15 @@ class LightningModule(base.LightningModule):
         all_losses = -(nominator / denominator.sum(dim=1)).log()
         loss = all_losses.sum() / z_proj.size(0)
         self.log(f"{training_stage}_loss", loss)
-        return loss + dataset_loss
+
+        if self.hparams.dataset_loss_weight > 0:
+            # apply dataset prediction network and reverse gradients
+            y_pred = self.dataset_predictor(-z + (2 * z).detach())
+            dataset_loss = F.cross_entropy(y_pred, dataset, self.dataset_weights)
+            self.log(f"{training_stage}_dataset_loss", dataset_loss)
+            self.log(
+                f"{training_stage}_dataset_acc",
+                (y_pred.argmax(dim=1) == dataset).float().mean(),
+            )
+            return loss + dataset_loss * self.hparams.dataset_loss_weight
+        return loss

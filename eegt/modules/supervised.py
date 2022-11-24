@@ -4,6 +4,15 @@ import torch.nn.functional as F
 from eegt.modules import base
 
 
+def add_arguments(parser):
+    parser.add_argument(
+        "--dataset-loss-weight",
+        default=0,
+        type=float,
+        help="weighting for adversarial dataset loss (0 to disable)",
+    )
+
+
 class LightningModule(base.LightningModule):
     def __init__(self, hparams):
         super().__init__(hparams)
@@ -19,14 +28,15 @@ class LightningModule(base.LightningModule):
             nn.Linear(self.hparams.embedding_dim // 2, len(self.class_weights)),
         )
 
-        # dataset prediction network
-        self.dataset_predictor = nn.Sequential(
-            nn.Linear(self.hparams.embedding_dim, self.hparams.embedding_dim // 2),
-            nn.ReLU(),
-            nn.Linear(
-                self.hparams.embedding_dim // 2, len(self.hparams.dataset_weights)
-            ),
-        )
+        if self.hparams.dataset_loss_weight > 0:
+            # dataset prediction network
+            self.dataset_predictor = nn.Sequential(
+                nn.Linear(self.hparams.embedding_dim, self.hparams.embedding_dim // 2),
+                nn.ReLU(),
+                nn.Linear(
+                    self.hparams.embedding_dim // 2, len(self.hparams.dataset_weights)
+                ),
+            )
 
     def forward(self, x, ch_pos, mask=None, return_latent=False):
         """
@@ -71,12 +81,14 @@ class LightningModule(base.LightningModule):
         acc = (y.argmax(dim=1) == condition).float().mean()
         self.log(f"{training_stage}_acc", acc)
 
-        # apply dataset prediction network and reverse gradients
-        y_dset = self.dataset_predictor(-z + (2 * z).detach())
-        dataset_loss = F.cross_entropy(y_dset, dataset, self.dataset_weights)
-        self.log(f"{training_stage}_dataset_loss", dataset_loss)
-        self.log(
-            f"{training_stage}_dataset_acc",
-            (y_dset.argmax(dim=1) == dataset).float().mean(),
-        )
-        return loss + dataset_loss
+        if self.hparams.dataset_loss_weight > 0:
+            # apply dataset prediction network and reverse gradients
+            y_dset = self.dataset_predictor(-z + (2 * z).detach())
+            dataset_loss = F.cross_entropy(y_dset, dataset, self.dataset_weights)
+            self.log(f"{training_stage}_dataset_loss", dataset_loss)
+            self.log(
+                f"{training_stage}_dataset_acc",
+                (y_dset.argmax(dim=1) == dataset).float().mean(),
+            )
+            return loss + dataset_loss * self.hparams.dataset_loss_weight
+        return loss
