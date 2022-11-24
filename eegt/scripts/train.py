@@ -35,8 +35,9 @@ def main(args):
     # load data
     data = RawDataset(args)
     idx_train, idx_val = split_data(data, args.val_subject_ratio)
-    # fetch dataset weights depending on their size
+    # fetch class and dataset weights
     args.dataset_weights = data.dataset_weights(idx_train)
+    args.class_weights = data.class_weights(idx_train)
     # store the size of a single token
     args.token_size = data[0][0].shape[0]
 
@@ -114,12 +115,6 @@ if __name__ == "__main__":
             help="path to the csv file containing labels",
         )
         parser.add_argument(
-            "--learning-rate",
-            default=5e-4,
-            type=float,
-            help="base learning rate",
-        )
-        parser.add_argument(
             "--early-stopping-patience",
             default=100,
             type=int,
@@ -136,42 +131,6 @@ if __name__ == "__main__":
             default=0.15,
             type=float,
             help="ratio of subjects to be used for validation",
-        )
-        parser.add_argument(
-            "--embedding-dim",
-            default=128,
-            type=int,
-            help="dimension of tokens inside the transformer",
-        )
-        parser.add_argument(
-            "--num-layers",
-            default=3,
-            type=int,
-            help="number of encoder layers in the transformer",
-        )
-        parser.add_argument(
-            "--num-heads",
-            default=8,
-            type=int,
-            help="number of attention heads",
-        )
-        parser.add_argument(
-            "--dropout",
-            default=0.0,
-            type=float,
-            help="dropout ratio",
-        )
-        parser.add_argument(
-            "--weight-decay",
-            default=0.3,
-            type=float,
-            help="weight decay",
-        )
-        parser.add_argument(
-            "--warmup-steps",
-            default=1000,
-            type=int,
-            help="number of steps for lr warmup",
         )
         parser.add_argument(
             "--max-epochs",
@@ -209,6 +168,48 @@ if __name__ == "__main__":
             type=int,
             help="number of gradient accumulation steps",
         )
+        parser.add_argument(
+            "--learning-rate",
+            default=5e-4,
+            type=float,
+            help="base learning rate",
+        )
+        parser.add_argument(
+            "--embedding-dim",
+            default=128,
+            type=int,
+            help="dimension of tokens inside the transformer",
+        )
+        parser.add_argument(
+            "--num-layers",
+            default=3,
+            type=int,
+            help="number of encoder layers in the transformer",
+        )
+        parser.add_argument(
+            "--num-heads",
+            default=8,
+            type=int,
+            help="number of attention heads",
+        )
+        parser.add_argument(
+            "--dropout",
+            default=0.0,
+            type=float,
+            help="dropout ratio",
+        )
+        parser.add_argument(
+            "--weight-decay",
+            default=0.3,
+            type=float,
+            help="weight decay",
+        )
+        parser.add_argument(
+            "--warmup-steps",
+            default=1000,
+            type=int,
+            help="number of steps for lr warmup",
+        )
 
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(
@@ -218,7 +219,9 @@ if __name__ == "__main__":
     )
 
     paradigms = [
-        pkg.name for pkg in pkgutil.walk_packages([eegt.__path__[0] + "/modules"])
+        pkg.name
+        for pkg in pkgutil.walk_packages([eegt.__path__[0] + "/modules"])
+        if pkg.name != "base"
     ]
     for name in paradigms:
         paradigm_parser = subparsers.add_parser(name)
