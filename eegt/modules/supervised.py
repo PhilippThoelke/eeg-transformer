@@ -16,10 +16,12 @@ def add_arguments(parser):
 class LightningModule(base.LightningModule):
     def __init__(self, hparams):
         super().__init__(hparams)
+        # store weights loss weighting
         self.register_buffer("class_weights", torch.tensor(self.hparams.class_weights))
-        self.register_buffer(
-            "dataset_weights", torch.tensor(self.hparams.dataset_weights)
-        )
+        if self.hparams.dataset_loss_weight > 0:
+            self.register_buffer(
+                "dataset_weights", torch.tensor(self.hparams.dataset_weights)
+            )
 
         # output network
         self.output_network = nn.Sequential(

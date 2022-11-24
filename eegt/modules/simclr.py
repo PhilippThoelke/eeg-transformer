@@ -62,9 +62,11 @@ def collate_decorator(collate_fn, args):
 class LightningModule(base.LightningModule):
     def __init__(self, hparams):
         super().__init__(hparams)
-        self.register_buffer(
-            "dataset_weights", torch.tensor(self.hparams.dataset_weights)
-        )
+        if self.hparams.dataset_loss_weight > 0:
+            # store weights for loss weighting
+            self.register_buffer(
+                "dataset_weights", torch.tensor(self.hparams.dataset_weights)
+            )
 
         # projection head
         self.projection = nn.Sequential(
