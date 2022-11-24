@@ -33,19 +33,21 @@ dl = DataLoader(
     data, batch_size=batch_size, collate_fn=RawDataset.collate, num_workers=4
 )
 
-latent, condition = [], []
+latent, condition, dataset = [], [], []
 for batch in tqdm(dl, desc="iterating dataset"):
-    x, ch_pos, mask, cond, _, _ = batch
+    x, ch_pos, mask, cond, _, dset = batch
 
     x = x.permute(2, 0, 1).to(device)
     ch_pos = ch_pos.permute(1, 0, 2).to(device)
     mask = mask.to(device)
     latent.append(model(x, ch_pos, mask).to("cpu"))
     condition.append(cond)
+    dataset.append(dset)
 
 print("saving latent data")
 latent = torch.cat(latent)
 condition = torch.cat(condition)
+dataset = torch.cat(dataset)
 splits = None
 if exists(splits_path):
     splits = torch.load(splits_path)
@@ -56,6 +58,8 @@ torch.save(
         latent=latent,
         condition=condition,
         condition2name=data.condition_mapping,
+        dataset=dataset,
+        dataset2name=data.dataset_mapping,
         splits=splits,
     ),
     "latent.pt",
