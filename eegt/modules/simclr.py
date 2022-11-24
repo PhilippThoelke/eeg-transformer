@@ -30,10 +30,6 @@ def collate_decorator(collate_fn, args):
     def augment(batch, eps=1e-7):
         x, ch_pos, mask, condition, subject, dataset = collate_fn(batch)
 
-        # standardize signal channel-wise
-        mean, std = x.mean(dim=(0, 1), keepdims=True), x.std(dim=(0, 1), keepdims=True)
-        x = (x - mean) / (std + eps)
-
         # augment data
         x_all, ch_pos_all, mask_all = [], [], []
         for k in range(2):
