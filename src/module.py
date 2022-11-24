@@ -120,8 +120,7 @@ class TransformerModule(pl.LightningModule):
         )
         # learning rate scheduler
         opt.param_groups[0]["initial_lr"] = self.hparams.learning_rate
-        # TODO: cosine annealing lr scheduler
-        scheduler = optim.lr_scheduler.ExponentialLR(opt, gamma=self.hparams.lr_decay)
+        scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(opt, T_0=2, T_mult=2)
         return dict(optimizer=opt, lr_scheduler=scheduler, monitor="train_loss")
 
     def training_epoch_end(self, *args, **kwargs):
@@ -136,14 +135,11 @@ class TransformerModule(pl.LightningModule):
     def optimizer_step(self, *args, **kwargs):
         # learning rate warmup
         if self.global_step < self.hparams.warmup_steps:
-            optimizers = self.optimizers()
-            if not isinstance(optimizers, list):
-                optimizers = [optimizers]
+            scheduler = self.lr_schedulers()
+            scheduler.base_lrs[0] = self.hparams.learning_rate * (
+                (self.global_step + 1) / self.hparams.warmup_steps
+            )
 
-            for opt in optimizers:
-                opt.param_groups[0]["lr"] = self.hparams.learning_rate * (
-                    (self.global_step + 1) / self.hparams.warmup_steps
-                )
         # continue with the optimizer step normally
         return super().optimizer_step(*args, **kwargs)
 
