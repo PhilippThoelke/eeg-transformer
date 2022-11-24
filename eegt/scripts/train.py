@@ -49,6 +49,10 @@ def main(args):
     collate_fn = RawDataset.collate
     if hasattr(paradigm, "collate_decorator"):
         collate_fn = paradigm.collate_decorator(collate_fn, args)
+        assert collate_fn is not None, (
+            f"{paradigm.__name__}.collate_decorator "
+            "did not return a collate function"
+        )
 
     # train subset
     train_data = Subset(data, idx_train)
@@ -164,7 +168,7 @@ if __name__ == "__main__":
         )
         parser.add_argument(
             "--gradient-accumulation",
-            default=5,
+            default=1,
             type=int,
             help="number of gradient accumulation steps",
         )
