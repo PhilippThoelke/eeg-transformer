@@ -29,7 +29,9 @@ hparams.label_path = join(data_path, basename(hparams.label_path))
 
 print("loading dataset")
 data = RawDataset(hparams)
-dl = DataLoader(data, batch_size=batch_size, collate_fn=RawDataset.collate, num_workers=4)
+dl = DataLoader(
+    data, batch_size=batch_size, collate_fn=RawDataset.collate, num_workers=4
+)
 
 latent, condition = [], []
 for batch in tqdm(dl, desc="iterating dataset"):
@@ -41,7 +43,7 @@ for batch in tqdm(dl, desc="iterating dataset"):
     latent.append(model(x, ch_pos, mask).to("cpu"))
     condition.append(cond)
 
-print ("saving latent data")
+print("saving latent data")
 latent = torch.cat(latent)
 condition = torch.cat(condition)
 splits = None
@@ -49,4 +51,12 @@ if exists(splits_path):
     splits = torch.load(splits_path)
 else:
     print(f"couldn't find splits file at {splits_path}")
-torch.save(dict(latent=latent, condition=condition, condition2name=data.condition_mapping, splits=splits), "latent.pt")
+torch.save(
+    dict(
+        latent=latent,
+        condition=condition,
+        condition2name=data.condition_mapping,
+        splits=splits,
+    ),
+    "latent.pt",
+)
