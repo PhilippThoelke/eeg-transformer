@@ -1,3 +1,5 @@
+import pkgutil
+import importlib
 import argparse
 from functools import reduce
 from os import makedirs, path
@@ -5,9 +7,8 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Subset
 import pytorch_lightning as pl
-from dataset import RawDataset
-from module import TransformerModule
-from augmentation import augmentations
+import eegt
+from eegt.dataset import RawDataset
 
 
 def split_data(data, val_subject_ratio):
@@ -30,71 +31,44 @@ def split_data(data, val_subject_ratio):
     return np.concatenate(train_idxs), np.concatenate(val_idxs)
 
 
-def data_augmentation(collate_fn, args):
-    def augment(batch, eps=1e-7):
-        x, ch_pos, mask, condition, subject, dataset = collate_fn(batch)
-
-        # standardize signal channel-wise
-        mean, std = x.mean(dim=(0, 1), keepdims=True), x.std(dim=(0, 1), keepdims=True)
-        x = (x - mean) / (std + eps)
-
-        # augment data
-        x_all, ch_pos_all, mask_all = [], [], []
-        for k in range(2):
-            x_aug, ch_pos_aug, mask_aug = x.clone(), ch_pos.clone(), mask.clone()
-            perm = torch.randperm(len(augmentations))
-            for j in perm[: args.num_augmentations]:
-                x_aug, ch_pos_aug, mask_aug = augmentations[j](
-                    x_aug, ch_pos_aug, mask_aug
-                )
-            x_all.append(x_aug)
-            ch_pos_all.append(ch_pos_aug)
-            mask_all.append(mask_aug)
-        x = torch.cat(x_all)
-        ch_pos = torch.cat(ch_pos_all)
-        mask = torch.cat(mask_all)
-        condition = torch.cat([condition, condition])
-        subject = torch.cat([subject, subject])
-        dataset = torch.cat([dataset, dataset])
-
-        # return augmented batch
-        return x, ch_pos, mask, condition, subject, dataset
-
-    return augment
-
-
 def main(args):
     # load data
     data = RawDataset(args)
     idx_train, idx_val = split_data(data, args.val_subject_ratio)
+    # fetch dataset weights depending on their size
+    args.dataset_weights = data.dataset_weights(idx_train)
+    # store the size of a single token
+    args.token_size = data[0][0].shape[0]
+
+    # instantiate PyTorch-Lightning module
+    paradigm = importlib.import_module(f"eegt.modules.{args.training_paradigm}")
+    module = paradigm.LightningModule(args)
+
+    # prepare the data collate function
+    collate_fn = RawDataset.collate
+    if hasattr(paradigm, "collate_decorator"):
+        collate_fn = paradigm.collate_decorator(collate_fn, args)
 
     # train subset
     train_data = Subset(data, idx_train)
     train_dl = DataLoader(
         train_data,
         batch_size=args.batch_size,
-        collate_fn=data_augmentation(RawDataset.collate, args),
+        collate_fn=collate_fn,
         shuffle=True,
         num_workers=8,
         prefetch_factor=4,
     )
-    # fetch dataset weights depending on their size
-    args.dataset_weights = data.dataset_weights(idx_train)
-    # store the size of a single token
-    args.token_size = train_data[0][0].shape[0]
 
     # val subset
     val_data = Subset(data, idx_val)
     val_dl = DataLoader(
         val_data,
         batch_size=args.batch_size,
-        collate_fn=data_augmentation(RawDataset.collate, args),
+        collate_fn=collate_fn,
         num_workers=8,
         prefetch_factor=4,
     )
-
-    # define model
-    module = TransformerModule(args)
 
     # define trainer instance
     trainer = pl.Trainer(
@@ -137,6 +111,15 @@ if __name__ == "__main__":
         type=str,
         required=True,
         help="path to the csv file containing labels",
+    )
+    parser.add_argument(
+        "--training-paradigm",
+        type=str,
+        required=True,
+        choices=[
+            pkg.name for pkg in pkgutil.walk_packages([eegt.__path__[0] + "/modules"])
+        ],
+        help="the training paradigm to use",
     )
     parser.add_argument(
         "--learning-rate",

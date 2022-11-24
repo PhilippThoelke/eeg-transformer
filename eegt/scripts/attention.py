@@ -1,61 +1,11 @@
 import warnings
 from os.path import join
 import glob
-from functools import partial
 from tqdm import tqdm
 import torch
 from torch.utils.data import DataLoader, Subset
-import numpy as np
-from module import TransformerModule
-from dataset import RawDataset
-
-
-class Attention:
-    def __init__(self, model):
-        self.model = model
-        self.handles = []
-        self.attn = []
-
-    def get(self):
-        return torch.stack(self.attn, dim=1)
-
-    def __enter__(self):
-        def attention_hook(module, input, output, attn):
-            attn.append(output[1])
-
-        for encoder_layer in self.model.encoder.encoder_layers:
-            hook = partial(attention_hook, attn=self.attn)
-            self.handles.append(encoder_layer.mha.register_forward_hook(hook))
-        return self
-
-    def __exit__(self, type, value, traceback):
-        for handle in self.handles:
-            handle.remove()
-
-
-def rollout(attn, head_fuse="max", only_class=False):
-    assert (
-        attn.ndim == 5
-    ), "expected attn to have 5 dimensions (batch x layers x heads x tokens x tokens)"
-    assert head_fuse in [
-        "max",
-        "mean",
-        "min",
-    ], "expected head_fuse to be one of max, mean, min"
-    fuse_fns = {"max": torch.max, "mean": torch.mean, "min": torch.min}
-
-    attn = fuse_fns[head_fuse](attn, dim=2)
-    if not isinstance(attn, torch.Tensor):
-        attn = attn.values
-
-    result = torch.eye(attn.size(-1))
-    for layer in attn.permute(1, 0, 2, 3).flip(dims=(0,)):
-        result = layer @ result
-
-    if only_class:
-        result = result[:, 0, 1:]
-        return result / result.max()
-    return result
+from eegt.modules.simclr import LightningModule
+from eegt.dataset import RawDataset
 
 
 def main(model_dir, data_path, label_path):
@@ -63,7 +13,7 @@ def main(model_dir, data_path, label_path):
     model_path = glob.glob(join(model_dir, "checkpoints", "*"))
     if len(model_path) > 1:
         warnings.warn(f"Found multiple model checkpoints, choosing {model_path[0]}.")
-    model = TransformerModule.load_from_checkpoint(model_path[0])
+    model = LightningModule.load_from_checkpoint(model_path[0])
     model.eval().freeze()
 
     if data_path is None:
