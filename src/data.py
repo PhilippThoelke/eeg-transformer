@@ -367,8 +367,38 @@ class GoNogo(ProcessedDataset):
         )
 
 
-# TODO datasets:
-# https://openneuro.org/datasets/ds004186
+class BrainInvaders(ProcessedDataset):
+    line_freq = 50
+    subject_ids = list(range(1, 72))
+
+    def instantiate(self, subject_id):
+        return MOABBDataset("bi2014a", subject_id)
+
+    def prepare_annotations(self, raw):
+        raise RuntimeError(
+            "Using annotations is currently not implemented for this dataset"
+        )
+
+
+class DemonsP300(ProcessedDataset):
+    line_freq = 50
+    subject_ids = list(range(1, 61))
+
+    def instantiate(self, subject_id):
+        return MOABBDataset("DemonsP300", subject_id)
+
+    def prepare_annotations(self, raw):
+        raise RuntimeError(
+            "Using annotations is currently not implemented for this dataset"
+        )
+
+
+class Shin2017B(ProcessedDataset):
+    line_freq = 50
+    subject_ids = list(range(1, 30))
+
+    def instantiate(self, subject_id):
+        return MOABBDataset("Shin2017B", subject_id, dataset_kwargs=dict(accept=True))
 
 
 if __name__ == "__main__":
@@ -386,6 +416,9 @@ if __name__ == "__main__":
         RestingCognitive(sfreq=sfreq, use_annotations=use_annotations),
         SleepEpilepsy(sfreq=sfreq, use_annotations=use_annotations),
         GoNogo(sfreq=sfreq, use_annotations=use_annotations),
+        BrainInvaders(sfreq=sfreq, use_annotations=use_annotations),
+        DemonsP300(sfreq=sfreq, use_annotations=use_annotations),
+        Shin2017B(sfreq=sfreq, use_annotations=use_annotations),
     ]
 
     # prepare processing the data
