@@ -2,15 +2,37 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from eegt.modules import base
+from eegt.augmentation import augmentations
 
 
 def add_arguments(parser):
     parser.add_argument(
-        "--dataset-loss-weight",
+        "--augmentation-prob",
         default=0,
+        type=float,
+        help="probability to apply data augmentation to the current batch",
+    )
+    parser.add_argument(
+        "--dataset-loss-weight",
+        default=0.5,
         type=float,
         help="weighting for adversarial dataset loss (0 to disable)",
     )
+
+
+def collate_decorator(collate_fn, args):
+    def augment(batch):
+        x, ch_pos, mask, condition, subject, dataset = collate_fn(batch)
+
+        if torch.rand((1,)).item() < args.augmentation_prob:
+            # apply data augmentation to the current batch
+            idx = torch.randint(0, len(augmentations), (1,)).item()
+            x, ch_pos, mask = augmentations[idx](x, ch_pos, mask)
+
+        # return augmented batch
+        return x, ch_pos, mask, condition, subject, dataset
+
+    return augment
 
 
 class LightningModule(base.LightningModule):
