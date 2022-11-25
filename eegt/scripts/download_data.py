@@ -308,7 +308,7 @@ class SleepEpilepsy(ProcessedDataset):
             mne.Annotations([raw.times.min()], [raw.times.max()], [paths[0].task])
         )
         # drop T1 and T2 channels
-        raw.drop_channels(["T1", "T2"])
+        raw.drop_channels(["T1", "T2", "Cz2"], on_missing="ignore")
         # set montage
         raw.set_montage(make_standard_montage("standard_1020"))
 
