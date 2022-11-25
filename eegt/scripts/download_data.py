@@ -366,7 +366,7 @@ class GoNogo(ProcessedDataset):
 
 class BrainInvaders(ProcessedDataset):
     line_freq = 50
-    subject_ids = list(range(1, 72))
+    subject_ids = list(range(1, 65))
 
     def instantiate(self, subject_id):
         return MOABBDataset("bi2014a", subject_id)
@@ -379,7 +379,7 @@ class BrainInvaders(ProcessedDataset):
 
 class DemonsP300(ProcessedDataset):
     line_freq = 50
-    subject_ids = list(range(1, 61))
+    subject_ids = list(range(0, 60))
 
     def instantiate(self, subject_id):
         return MOABBDataset("DemonsP300", subject_id)
