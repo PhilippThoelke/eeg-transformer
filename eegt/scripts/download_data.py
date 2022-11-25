@@ -224,7 +224,7 @@ class Zhou2016(ProcessedDataset):
 
 class MAMEM1(ProcessedDataset):
     line_freq = 50
-    subject_ids = list(range(1, 12))
+    subject_ids = list(range(1, 11))
 
     def instantiate(self, subject_id):
         return MOABBDataset("MAMEM1", subject_id)
