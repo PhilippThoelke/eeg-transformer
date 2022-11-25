@@ -328,7 +328,7 @@ class GoNogo(ProcessedDataset):
         root = join(".", dataset_id)
         sub_dir = f"sub-{subject_id_bids}"
         # download current subject
-        # openneuro.download(dataset=dataset_id, target_dir=root, include=sub_dir)
+        openneuro.download(dataset=dataset_id, target_dir=root, include=sub_dir)
 
         paths = BIDSPath(
             subject=subject_id_bids, datatype="eeg", suffix="eeg", root=root
