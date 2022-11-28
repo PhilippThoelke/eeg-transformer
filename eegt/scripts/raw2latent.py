@@ -19,7 +19,7 @@ else:
 splits_path = expanduser(join(dirname(dirname(ckpt_path)), "splits.pt"))
 
 print("loading model checkpoint")
-module = TransformerModule.load_from_checkpoint(ckpt_path, map_location="cpu")
+module = LightningModule.load_from_checkpoint(ckpt_path, map_location="cpu")
 module.eval().freeze()
 model = module.model.to(device)
 
