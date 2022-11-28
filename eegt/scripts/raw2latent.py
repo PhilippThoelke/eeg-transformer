@@ -1,7 +1,7 @@
 import os
 from os.path import join, basename, dirname, exists, expanduser
 from eegt.modules.simclr import LightningModule
-from dataset import RawDataset
+from eegt.dataset import RawDataset
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
