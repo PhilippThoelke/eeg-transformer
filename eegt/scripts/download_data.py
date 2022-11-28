@@ -398,6 +398,14 @@ class Shin2017B(ProcessedDataset):
         return MOABBDataset("Shin2017B", subject_id, dataset_kwargs=dict(accept=True))
 
 
+class Cho2017(ProcessedDataset):
+    line_freq = 60
+    subject_ids = list(range(1, 53))
+
+    def instantiate(self, subject_id):
+        return MOABBDataset("Cho2017", subject_id)
+
+
 if __name__ == "__main__":
     result_dir = "data/"
     epoch_length = 1
@@ -416,6 +424,7 @@ if __name__ == "__main__":
         BrainInvaders(sfreq=sfreq, use_annotations=use_annotations),
         DemonsP300(sfreq=sfreq, use_annotations=use_annotations),
         Shin2017B(sfreq=sfreq, use_annotations=use_annotations),
+        Cho2017(sfreq=sfreq, use_annotations=use_annotations),
     ]
 
     # prepare processing the data
