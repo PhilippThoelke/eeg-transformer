@@ -473,9 +473,9 @@ class Concentration(ProcessedDataset):
                 raw.annotations.onset[j - 1] - raw.annotations.onset[i]
             )
 
-        raw.annotations.description=np.array(final_desc)
-        raw.annotations.onset=np.array(final_onset)
-        raw.annotations.duration=np.array(final_duration)
+        raw.annotations.description = np.array(final_desc)
+        raw.annotations.onset = np.array(final_onset)
+        raw.annotations.duration = np.array(final_duration)
 
 
 if __name__ == "__main__":
@@ -483,20 +483,20 @@ if __name__ == "__main__":
     epoch_length = 1
     epoch_overlap = 0.5
     sfreq = 128
-    use_annotations = True
+    use_annotations = False
 
     # define datasets
     datasets = [
-        # PhysionetMI(sfreq=sfreq, use_annotations=use_annotations),
-        # Zhou2016(sfreq=sfreq, use_annotations=use_annotations),
-        # MAMEM1(sfreq=sfreq, use_annotations=use_annotations),
-        # RestingCognitive(sfreq=sfreq, use_annotations=use_annotations),
-        # SleepEpilepsy(sfreq=sfreq, use_annotations=use_annotations),
-        # GoNogo(sfreq=sfreq, use_annotations=use_annotations),
-        # BrainInvaders(sfreq=sfreq, use_annotations=use_annotations),
-        # DemonsP300(sfreq=sfreq, use_annotations=use_annotations),
-        # Shin2017B(sfreq=sfreq, use_annotations=use_annotations),
-        # Cho2017(sfreq=sfreq, use_annotations=use_annotations),
+        PhysionetMI(sfreq=sfreq, use_annotations=use_annotations),
+        Zhou2016(sfreq=sfreq, use_annotations=use_annotations),
+        MAMEM1(sfreq=sfreq, use_annotations=use_annotations),
+        RestingCognitive(sfreq=sfreq, use_annotations=use_annotations),
+        SleepEpilepsy(sfreq=sfreq, use_annotations=use_annotations),
+        GoNogo(sfreq=sfreq, use_annotations=use_annotations),
+        BrainInvaders(sfreq=sfreq, use_annotations=use_annotations),
+        DemonsP300(sfreq=sfreq, use_annotations=use_annotations),
+        Shin2017B(sfreq=sfreq, use_annotations=use_annotations),
+        Cho2017(sfreq=sfreq, use_annotations=use_annotations),
         Concentration(sfreq=sfreq, use_annotations=use_annotations),
     ]
 
