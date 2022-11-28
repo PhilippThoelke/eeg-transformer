@@ -406,25 +406,98 @@ class Cho2017(ProcessedDataset):
         return MOABBDataset("Cho2017", subject_id)
 
 
+class Concentration(ProcessedDataset):
+    line_freq = 60
+    subject_ids = list(range(1, 21))
+
+    def instantiate(self, subject_id):
+        subject_id_bids = f"{subject_id:03}"
+        dataset_id = "ds002691"
+        root = join(".", dataset_id)
+        sub_dir = f"sub-{subject_id_bids}"
+        # download current subject
+        openneuro.download(dataset=dataset_id, target_dir=root, include=sub_dir)
+
+        paths = BIDSPath(
+            subject=subject_id_bids, datatype="eeg", suffix="eeg", root=root
+        )
+
+        raw_datasets = []
+        for path in paths.match():
+            raw = read_raw_bids(path)
+
+            # get template montage
+            template_pos = mne.channels.make_standard_montage(
+                "GSN-HydroCel-32"
+            ).get_positions()["ch_pos"]
+            # update channel positions
+            raw.set_montage(
+                mne.channels.make_dig_montage(
+                    {
+                        ch["ch_name"]: template_pos[ch["ch_name"]]
+                        for ch in raw.info["chs"]
+                    }
+                )
+            )
+
+            raw_datasets.append(BaseDataset(raw))
+
+        # make sure all raws are consistent
+        line_freqs = [d.raw.info["line_freq"] for d in raw_datasets]
+        assert all(self.line_freq == lf for lf in line_freqs)
+
+        dset = BaseConcatDataset(raw_datasets)
+        # create dataset description
+        desc = pd.DataFrame([subject_id] * len(dset.description), columns=["subject"])
+        dset.set_description(desc)
+        return dset
+
+    def prepare_annotations(self, raw):
+        desc = np.array(
+            list(map(lambda x: x.split("/")[0], raw.annotations.description))
+        )
+
+        # group blocks of the same annotation
+        final_desc, final_onset, final_duration = [], [], []
+        for i in range(len(desc)):
+            val = desc[i]
+            if len(final_desc) > 0 and final_desc[-1] == val:
+                continue
+
+            for j in range(i + 1, len(desc)):
+                if desc[j] != val:
+                    break
+            final_desc.append(val)
+            final_onset.append(raw.annotations.onset[i])
+            final_duration.append(
+                raw.annotations.onset[j - 1] - raw.annotations.onset[i]
+            )
+
+        raw.annotations.description=np.array(final_desc)
+        raw.annotations.onset=np.array(final_onset)
+        raw.annotations.duration=np.array(final_duration)
+
+
 if __name__ == "__main__":
     result_dir = "data/"
     epoch_length = 1
     epoch_overlap = 0.5
     sfreq = 128
-    use_annotations = False
+    use_annotations = True
 
     # define datasets
     datasets = [
-        PhysionetMI(sfreq=sfreq, use_annotations=use_annotations),
-        Zhou2016(sfreq=sfreq, use_annotations=use_annotations),
-        MAMEM1(sfreq=sfreq, use_annotations=use_annotations),
-        RestingCognitive(sfreq=sfreq, use_annotations=use_annotations),
-        SleepEpilepsy(sfreq=sfreq, use_annotations=use_annotations),
-        GoNogo(sfreq=sfreq, use_annotations=use_annotations),
-        BrainInvaders(sfreq=sfreq, use_annotations=use_annotations),
-        DemonsP300(sfreq=sfreq, use_annotations=use_annotations),
-        Shin2017B(sfreq=sfreq, use_annotations=use_annotations),
-        Cho2017(sfreq=sfreq, use_annotations=use_annotations),
+        # PhysionetMI(sfreq=sfreq, use_annotations=use_annotations),
+        # Zhou2016(sfreq=sfreq, use_annotations=use_annotations),
+        # MAMEM1(sfreq=sfreq, use_annotations=use_annotations),
+        # RestingCognitive(sfreq=sfreq, use_annotations=use_annotations),
+        # SleepEpilepsy(sfreq=sfreq, use_annotations=use_annotations),
+        # GoNogo(sfreq=sfreq, use_annotations=use_annotations),
+        # BrainInvaders(sfreq=sfreq, use_annotations=use_annotations),
+        # DemonsP300(sfreq=sfreq, use_annotations=use_annotations),
+        # Shin2017B(sfreq=sfreq, use_annotations=use_annotations),
+        # Cho2017(sfreq=sfreq, use_annotations=use_annotations),
+        Concentration(sfreq=sfreq, use_annotations=use_annotations),
     ]
 
     # prepare processing the data
