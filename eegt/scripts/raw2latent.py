@@ -21,7 +21,7 @@ splits_path = expanduser(join(dirname(dirname(ckpt_path)), "splits.pt"))
 print("loading model checkpoint")
 module = TransformerModule.load_from_checkpoint(ckpt_path, map_location="cpu")
 module.eval().freeze()
-model = module.encoder.to(device)
+model = module.model.to(device)
 
 hparams = module.hparams
 hparams.data_path = join(data_path, basename(hparams.data_path))
