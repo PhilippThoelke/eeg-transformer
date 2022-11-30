@@ -4,7 +4,6 @@ import argparse
 from os import makedirs, path
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, Subset
 import pytorch_lightning as pl
 import eegt
 from eegt import utils
@@ -12,9 +11,10 @@ from eegt.dataset import RawDataset
 
 
 def main(args):
-    # load data
+    # load data and split into train and validation set
     data = RawDataset(args)
     idx_train, idx_val = utils.split_data(data, args.val_subject_ratio)
+
     # fetch class and dataset weights
     args.dataset_weights = data.dataset_weights(idx_train)
     args.class_weights = data.class_weights(idx_train)
@@ -33,35 +33,9 @@ def main(args):
     paradigm = importlib.import_module(f"eegt.modules.{args.training_paradigm}")
     module = paradigm.LightningModule(args, model=model)
 
-    # prepare the data collate function
-    collate_fn = RawDataset.collate
-    if hasattr(paradigm, "collate_decorator"):
-        collate_fn = paradigm.collate_decorator(collate_fn, args)
-        assert collate_fn is not None, (
-            f"{paradigm.__name__}.collate_decorator "
-            "did not return a collate function"
-        )
-
-    # train subset
-    train_data = Subset(data, idx_train)
-    train_dl = DataLoader(
-        train_data,
-        batch_size=args.batch_size,
-        collate_fn=collate_fn,
-        shuffle=True,
-        num_workers=8,
-        prefetch_factor=4,
-    )
-
-    # val subset
-    val_data = Subset(data, idx_val)
-    val_dl = DataLoader(
-        val_data,
-        batch_size=args.batch_size,
-        collate_fn=collate_fn,
-        num_workers=8,
-        prefetch_factor=4,
-    )
+    # create dataloaders
+    train_dl = utils.get_dataloader(args, data, indices=idx_train, shuffle=True)
+    val_dl = utils.get_dataloader(args, data, indices=idx_val)
 
     # define trainer instance
     trainer = pl.Trainer(

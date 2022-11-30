@@ -91,6 +91,11 @@ class RawDataset(Dataset):
         # invert normalized counts -> larger weight for underrepresented dataset
         return (1 / counts).tolist()
 
+    def sample_weights(self, indices=None):
+        class_weights = np.array(self.class_weights(indices=indices))
+        # return sample-wise class weight
+        return class_weights[self.condition_ids[indices]]
+
     def __len__(self):
         return len(self.metadata)
 

@@ -1,3 +1,4 @@
+import distutils
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -16,6 +17,12 @@ def add_arguments(parser):
         "--dataset-loss-weight",
         default=0.5,
         type=float,
+        help="weighting for adversarial dataset loss (0 to disable)",
+    )
+    parser.add_argument(
+        "--use-weighted-sampler",
+        default=True,
+        type=lambda x: bool(distutils.util.strtobool(x)),
         help="weighting for adversarial dataset loss (0 to disable)",
     )
 
@@ -98,7 +105,10 @@ class LightningModule(base.LightningModule):
         y, z = self(x, ch_pos, mask, return_latent=True)
 
         # compute cross entropy loss
-        loss = F.cross_entropy(y, condition, self.class_weights)
+        if self.hparams.use_weighted_sampler:
+            loss = F.cross_entropy(y, condition)
+        else:
+            loss = F.cross_entropy(y, condition, self.class_weights)
         self.log(f"{training_stage}_loss", loss)
 
         # compute accuracy

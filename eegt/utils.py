@@ -3,6 +3,8 @@ import importlib
 import numpy as np
 from functools import reduce
 import torch
+from torch.utils.data import DataLoader, Subset, WeightedRandomSampler
+from eegt.dataset import RawDataset
 
 
 def load_model(path):
@@ -34,6 +36,41 @@ def split_data(data, val_subject_ratio):
         train_idxs.append(np.where(~val_mask & dset_mask)[0])
         val_idxs.append(np.where(val_mask)[0])
     return np.concatenate(train_idxs), np.concatenate(val_idxs)
+
+
+def get_dataloader(args, full_dataset, indices=None, shuffle=False):
+    # use only a subset of the data
+    if indices is not None:
+        data = Subset(full_dataset, indices)
+    else:
+        data = full_dataset
+
+    # prepare the data collate function
+    collate_fn = RawDataset.collate
+    # potentially wrap the collate function in a paradigm-specific way
+    paradigm = importlib.import_module(f"eegt.modules.{args.training_paradigm}")
+    if hasattr(paradigm, "collate_decorator"):
+        collate_fn = paradigm.collate_decorator(collate_fn, args)
+        assert collate_fn is not None, (
+            f"{paradigm.__name__}.collate_decorator "
+            "did not return a collate function"
+        )
+
+    # create sampler
+    sampler = None
+    if "use_weighted_sampler" in args and args.use_weighted_sampler:
+        sampler = WeightedRandomSampler(full_dataset.sample_weights(indices), len(data))
+
+    # instantiate dataloader
+    return DataLoader(
+        data,
+        batch_size=args.batch_size,
+        collate_fn=collate_fn,
+        sampler=sampler,
+        shuffle=shuffle if sampler is None else False,
+        num_workers=8,
+        prefetch_factor=4,
+    )
 
 
 class Attention:
