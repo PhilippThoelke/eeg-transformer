@@ -10,6 +10,7 @@ class LightningModule(pl.LightningModule, ABC):
     def __init__(self, hparams, model=None):
         super().__init__()
         self.save_hyperparameters(hparams)
+        self.model_frozen = False
 
         # transformer encoder
         if model is None:
@@ -22,6 +23,11 @@ class LightningModule(pl.LightningModule, ABC):
             )
         else:
             self.model = model
+            if self.hparams.freeze_steps > 0:
+                # freeze model parameters
+                for param in self.model.parameters():
+                    param.requires_grad = False
+                self.model_frozen = True
 
     @abstractmethod
     def step(self, batch, batch_idx, training_stage):
@@ -87,6 +93,12 @@ class LightningModule(pl.LightningModule, ABC):
             scheduler.base_lrs[0] = self.hparams.learning_rate * (
                 (self.global_step + 1) / self.hparams.warmup_steps
             )
+
+        # unfreeze pretrained model
+        if self.global_step >= self.hparams.freeze_steps and self.model_frozen:
+            for param in self.model.parameters():
+                param.requires_grad = True
+            self.model_frozen = False
 
         # continue with the optimizer step normally
         return super().optimizer_step(*args, **kwargs)

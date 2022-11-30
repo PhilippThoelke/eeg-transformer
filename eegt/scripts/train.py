@@ -155,6 +155,12 @@ if __name__ == "__main__":
             help="path to a checkpoint file (only loads the encoder model)",
         )
         parser.add_argument(
+            "--freeze-steps",
+            default=1000,
+            type=int,
+            help="number of training steps before the loaded encoder model is trained",
+        )
+        parser.add_argument(
             "--sample-rate",
             default=None,
             type=float,
