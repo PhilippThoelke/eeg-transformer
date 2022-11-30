@@ -1,4 +1,3 @@
-import distutils
 import numpy as np
 import torch
 from torch import nn
@@ -20,12 +19,6 @@ def add_arguments(parser):
         "--dataset-loss-weight",
         default=0.5,
         type=float,
-        help="weighting for adversarial dataset loss (0 to disable)",
-    )
-    parser.add_argument(
-        "--use-weighted-sampler",
-        default=True,
-        type=lambda x: bool(distutils.util.strtobool(x)),
         help="weighting for adversarial dataset loss (0 to disable)",
     )
 

@@ -1,5 +1,6 @@
 import pkgutil
 import importlib
+import distutils
 import argparse
 from os import makedirs, path
 import numpy as np
@@ -133,6 +134,12 @@ if __name__ == "__main__":
             default=None,
             type=float,
             help="frequency at which to apply a high pass filter",
+        )
+        parser.add_argument(
+            "--weighted-sampler",
+            default=True,
+            type=lambda x: bool(distutils.util.strtobool(x)),
+            help="if true, use a weighted random sampler to counteract imbalance",
         )
         parser.add_argument(
             "--gradient-accumulation",

@@ -58,7 +58,7 @@ def get_dataloader(args, full_dataset, indices=None, training=False):
 
     # create sampler
     sampler = None
-    if "use_weighted_sampler" in args and args.use_weighted_sampler:
+    if args.weighted_sampler:
         sampler = WeightedRandomSampler(full_dataset.sample_weights(indices), len(data))
 
     # instantiate dataloader
