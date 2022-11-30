@@ -45,6 +45,7 @@ def main(args):
     # handle model loading
     model=None
     if args.load_model is not None:
+        pl.utilities.rank_zero_info(f"Using pretrained encoder model: {args.load_model}")
         model = utils.load_model(args.load_model)
 
     # instantiate PyTorch-Lightning module
