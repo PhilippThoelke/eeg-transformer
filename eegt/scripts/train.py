@@ -1,7 +1,6 @@
 import pkgutil
 import importlib
 import argparse
-from functools import reduce
 from os import makedirs, path
 import numpy as np
 import torch
@@ -12,30 +11,10 @@ from eegt import utils
 from eegt.dataset import RawDataset
 
 
-def split_data(data, val_subject_ratio):
-    dataset_names = set([name.split("-")[0] for name in data.subject_mapping])
-
-    # iterate over all datasets
-    train_idxs, val_idxs = [], []
-    for name in dataset_names:
-        dset_mask = data.subject_mapping.str.startswith(name)[data.subject_ids]
-        subj_ids = data.subject_ids[dset_mask]
-
-        # split the data by subjects
-        unique_subj_ids = np.unique(subj_ids)
-        num_val_subjs = max(int(len(unique_subj_ids) * val_subject_ratio), 1)
-        val_subjs = np.random.choice(unique_subj_ids, num_val_subjs, replace=False)
-        val_mask = reduce(np.bitwise_or, [data.subject_ids == i for i in val_subjs])
-        # get train/val indices
-        train_idxs.append(np.where(~val_mask & dset_mask)[0])
-        val_idxs.append(np.where(val_mask)[0])
-    return np.concatenate(train_idxs), np.concatenate(val_idxs)
-
-
 def main(args):
     # load data
     data = RawDataset(args)
-    idx_train, idx_val = split_data(data, args.val_subject_ratio)
+    idx_train, idx_val = utils.split_data(data, args.val_subject_ratio)
     # fetch class and dataset weights
     args.dataset_weights = data.dataset_weights(idx_train)
     args.class_weights = data.class_weights(idx_train)

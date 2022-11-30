@@ -1,5 +1,7 @@
 from functools import partial
 import importlib
+import numpy as np
+from functools import reduce
 import torch
 
 
@@ -12,6 +14,26 @@ def load_lightning_module(path):
     paradigm = importlib.import_module(f"eegt.modules.{paradigm_name}")
     module = paradigm.LightningModule.load_from_checkpoint(path, map_location="cpu")
     return module
+
+
+def split_data(data, val_subject_ratio):
+    dataset_names = set([name.split("-")[0] for name in data.subject_mapping])
+
+    # iterate over all datasets
+    train_idxs, val_idxs = [], []
+    for name in dataset_names:
+        dset_mask = data.subject_mapping.str.startswith(name)[data.subject_ids]
+        subj_ids = data.subject_ids[dset_mask]
+
+        # split the data by subjects
+        unique_subj_ids = np.unique(subj_ids)
+        num_val_subjs = max(int(len(unique_subj_ids) * val_subject_ratio), 1)
+        val_subjs = np.random.choice(unique_subj_ids, num_val_subjs, replace=False)
+        val_mask = reduce(np.bitwise_or, [data.subject_ids == i for i in val_subjs])
+        # get train/val indices
+        train_idxs.append(np.where(~val_mask & dset_mask)[0])
+        val_idxs.append(np.where(val_mask)[0])
+    return np.concatenate(train_idxs), np.concatenate(val_idxs)
 
 
 class Attention:
