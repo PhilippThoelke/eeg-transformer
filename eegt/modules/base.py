@@ -23,7 +23,7 @@ class LightningModule(pl.LightningModule, ABC):
             )
         else:
             self.model = model
-            if self.hparams.freeze_steps > 0:
+            if self.hparams.freeze_steps != 0:
                 # freeze model parameters
                 for param in self.model.parameters():
                     param.requires_grad = False
@@ -95,10 +95,11 @@ class LightningModule(pl.LightningModule, ABC):
             )
 
         # unfreeze pretrained model
-        if self.global_step >= self.hparams.freeze_steps and self.model_frozen:
-            for param in self.model.parameters():
-                param.requires_grad = True
-            self.model_frozen = False
+        if self.hparams.freeze_steps > 0:
+            if self.global_step >= self.hparams.freeze_steps and self.model_frozen:
+                for param in self.model.parameters():
+                    param.requires_grad = True
+                self.model_frozen = False
 
         # continue with the optimizer step normally
         return super().optimizer_step(*args, **kwargs)

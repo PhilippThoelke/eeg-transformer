@@ -108,7 +108,7 @@ if __name__ == "__main__":
             "--freeze-steps",
             default=1000,
             type=int,
-            help="number of training steps before the loaded encoder model is trained",
+            help="number of steps before the pretrained model is trained (0 to disable freezing, -1 to never unfreeze)",
         )
         parser.add_argument(
             "--sample-rate",
