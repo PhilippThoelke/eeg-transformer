@@ -469,9 +469,7 @@ class Concentration(ProcessedDataset):
                     break
             final_desc.append(val)
             final_onset.append(raw.annotations.onset[i])
-            final_duration.append(
-                raw.annotations.onset[j - 1] - raw.annotations.onset[i]
-            )
+            final_duration.append(raw.annotations.onset[j] - raw.annotations.onset[i])
 
         raw.annotations.description = np.array(final_desc)
         raw.annotations.onset = np.array(final_onset)
