@@ -12,7 +12,7 @@ from eegt.augmentation import augmentations
 def add_arguments(parser):
     parser.add_argument(
         "--augmentation-prob",
-        default=0,
+        default=0.2,
         type=float,
         help="probability to apply data augmentation to the current batch",
     )
