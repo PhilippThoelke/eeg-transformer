@@ -85,7 +85,7 @@ def main(args):
     trainer = pl.Trainer(
         accelerator="auto",
         devices="auto",
-        max_epochs=args.max_epochs,
+        max_epochs=-1,
         callbacks=[
             pl.callbacks.EarlyStopping(
                 "val_loss", patience=args.early_stopping_patience, mode="min"
@@ -141,12 +141,6 @@ if __name__ == "__main__":
             default=0.15,
             type=float,
             help="ratio of subjects to be used for validation",
-        )
-        parser.add_argument(
-            "--max-epochs",
-            default=1000,
-            type=int,
-            help="maximum number of epochs",
         )
         parser.add_argument(
             "--load-model",
