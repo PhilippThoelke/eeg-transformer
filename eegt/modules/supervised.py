@@ -1,7 +1,10 @@
 import distutils
+import numpy as np
 import torch
 from torch import nn
 import torch.nn.functional as F
+from sklearn.metrics import confusion_matrix
+from matplotlib import pyplot as plt
 from eegt.modules import base
 from eegt.augmentation import augmentations
 
@@ -69,6 +72,9 @@ class LightningModule(base.LightningModule):
                 ),
             )
 
+        # initialize confusion matrix dict
+        self.confusion_matrices = {}
+
     def forward(self, x, ch_pos, mask=None, return_latent=False):
         """
         Perform a forward pass of the EEG Transformer.
@@ -115,8 +121,19 @@ class LightningModule(base.LightningModule):
         acc = (y.argmax(dim=1) == condition).float().mean()
         self.log(f"{training_stage}_acc", acc)
 
+        # accumulate confusion matrices
+        cm = confusion_matrix(
+            condition.cpu().numpy(),
+            y.argmax(dim=-1).cpu().numpy(),
+            labels=range(len(self.class_weights)),
+        )
+        if training_stage not in self.confusion_matrices:
+            self.confusion_matrices[training_stage] = cm
+        else:
+            self.confusion_matrices[training_stage] += cm
+
+        # apply dataset prediction network and reverse gradients
         if self.hparams.dataset_loss_weight > 0:
-            # apply dataset prediction network and reverse gradients
             y_dset = self.dataset_predictor(-z + (2 * z).detach())
             dataset_loss = F.cross_entropy(y_dset, dataset, self.dataset_weights)
             self.log(f"{training_stage}_dataset_loss", dataset_loss)
@@ -126,3 +143,22 @@ class LightningModule(base.LightningModule):
             )
             return loss + dataset_loss * self.hparams.dataset_loss_weight
         return loss
+
+    def validation_epoch_end(self, outputs):
+        for stage, cm in self.confusion_matrices.items():
+            # normalize confusion matrix
+            counts = cm.sum(axis=1, keepdims=True)
+            cm = cm / np.where(counts, counts, 1)
+
+            # create confusion matrix plot
+            fig, ax = plt.subplots()
+            ax.imshow(cm)
+            ax.set_xlabel("prediction")
+            ax.xaxis.set_label_position("top")
+            ax.set_ylabel("ground truth")
+            ax.yaxis.set_label_position("right")
+            fig.tight_layout()
+
+            # log the confusion matrix
+            self.logger.experiment.add_figure(f"{stage}_cm", fig)
+        self.confusion_matrices = {}
