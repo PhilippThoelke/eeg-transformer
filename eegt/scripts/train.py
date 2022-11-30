@@ -34,8 +34,8 @@ def main(args):
     module = paradigm.LightningModule(args, model=model)
 
     # create dataloaders
-    train_dl = utils.get_dataloader(args, data, indices=idx_train, shuffle=True)
-    val_dl = utils.get_dataloader(args, data, indices=idx_val)
+    train_dl = utils.get_dataloader(args, data, indices=idx_train, training=True)
+    val_dl = utils.get_dataloader(args, data, indices=idx_val, training=False)
 
     # define trainer instance
     trainer = pl.Trainer(

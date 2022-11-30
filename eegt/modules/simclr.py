@@ -26,7 +26,7 @@ def add_arguments(parser):
     )
 
 
-def collate_decorator(collate_fn, args):
+def collate_decorator(collate_fn, args, training=False):
     def augment(batch, eps=1e-7):
         x, ch_pos, mask, condition, subject, dataset = collate_fn(batch)
 

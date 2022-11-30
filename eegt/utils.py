@@ -38,7 +38,7 @@ def split_data(data, val_subject_ratio):
     return np.concatenate(train_idxs), np.concatenate(val_idxs)
 
 
-def get_dataloader(args, full_dataset, indices=None, shuffle=False):
+def get_dataloader(args, full_dataset, indices=None, training=False):
     # use only a subset of the data
     if indices is not None:
         data = Subset(full_dataset, indices)
@@ -50,7 +50,7 @@ def get_dataloader(args, full_dataset, indices=None, shuffle=False):
     # potentially wrap the collate function in a paradigm-specific way
     paradigm = importlib.import_module(f"eegt.modules.{args.training_paradigm}")
     if hasattr(paradigm, "collate_decorator"):
-        collate_fn = paradigm.collate_decorator(collate_fn, args)
+        collate_fn = paradigm.collate_decorator(collate_fn, args, training)
         assert collate_fn is not None, (
             f"{paradigm.__name__}.collate_decorator "
             "did not return a collate function"
@@ -67,7 +67,7 @@ def get_dataloader(args, full_dataset, indices=None, shuffle=False):
         batch_size=args.batch_size,
         collate_fn=collate_fn,
         sampler=sampler,
-        shuffle=shuffle if sampler is None else False,
+        shuffle=training if sampler is None else False,
         num_workers=8,
         prefetch_factor=4,
     )
