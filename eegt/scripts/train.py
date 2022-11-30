@@ -43,9 +43,11 @@ def main(args):
     args.token_size = data[0][0].shape[0]
 
     # handle model loading
-    model=None
+    model = None
     if args.load_model is not None:
-        pl.utilities.rank_zero_info(f"Using pretrained encoder model: {args.load_model}")
+        pl.utilities.rank_zero_info(
+            f"Using pretrained encoder model: {args.load_model}"
+        )
         model = utils.load_model(args.load_model)
 
     # instantiate PyTorch-Lightning module
