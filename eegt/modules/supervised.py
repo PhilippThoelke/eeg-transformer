@@ -107,7 +107,7 @@ class LightningModule(base.LightningModule):
         y, z = self(x, ch_pos, mask, return_latent=True)
 
         # compute cross entropy loss
-        if self.hparams.use_weighted_sampler:
+        if self.hparams.weighted_sampler:
             loss = F.cross_entropy(y, condition)
         else:
             loss = F.cross_entropy(y, condition, self.class_weights)
