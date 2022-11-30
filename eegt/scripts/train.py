@@ -8,6 +8,7 @@ import torch
 from torch.utils.data import DataLoader, Subset
 import pytorch_lightning as pl
 import eegt
+from eegt import utils
 from eegt.dataset import RawDataset
 
 
@@ -41,9 +42,14 @@ def main(args):
     # store the size of a single token
     args.token_size = data[0][0].shape[0]
 
+    # handle model loading
+    model=None
+    if args.load_model is not None:
+        model = utils.load_model(args.load_model)
+
     # instantiate PyTorch-Lightning module
     paradigm = importlib.import_module(f"eegt.modules.{args.training_paradigm}")
-    module = paradigm.LightningModule(args)
+    module = paradigm.LightningModule(args, model=model)
 
     # prepare the data collate function
     collate_fn = RawDataset.collate
@@ -141,6 +147,12 @@ if __name__ == "__main__":
             default=1000,
             type=int,
             help="maximum number of epochs",
+        )
+        parser.add_argument(
+            "--load-model",
+            default=None,
+            type=str,
+            help="path to a checkpoint file (only loads the encoder model)",
         )
         parser.add_argument(
             "--sample-rate",

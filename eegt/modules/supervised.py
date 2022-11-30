@@ -36,8 +36,8 @@ def collate_decorator(collate_fn, args):
 
 
 class LightningModule(base.LightningModule):
-    def __init__(self, hparams):
-        super().__init__(hparams)
+    def __init__(self, hparams, model=None):
+        super().__init__(hparams, model)
         # store weights loss weighting
         self.register_buffer("class_weights", torch.tensor(self.hparams.class_weights))
         if self.hparams.dataset_loss_weight > 0:

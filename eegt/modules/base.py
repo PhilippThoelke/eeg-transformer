@@ -7,18 +7,21 @@ from eegt.model import EEGEncoder
 
 
 class LightningModule(pl.LightningModule, ABC):
-    def __init__(self, hparams):
+    def __init__(self, hparams, model=None):
         super().__init__()
         self.save_hyperparameters(hparams)
 
         # transformer encoder
-        self.model = EEGEncoder(
-            self.hparams.embedding_dim,
-            self.hparams.num_layers,
-            self.hparams.token_size,
-            nheads=self.hparams.num_heads,
-            dropout=self.hparams.dropout,
-        )
+        if model is None:
+            self.model = EEGEncoder(
+                self.hparams.embedding_dim,
+                self.hparams.num_layers,
+                self.hparams.token_size,
+                nheads=self.hparams.num_heads,
+                dropout=self.hparams.dropout,
+            )
+        else:
+            self.model = model
 
     @abstractmethod
     def step(self, batch, batch_idx, training_stage):

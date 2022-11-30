@@ -1,5 +1,13 @@
 from functools import partial
+import importlib
 import torch
+
+
+def load_model(path):
+    paradigm_name = torch.load(path)["hyper_parameters"]["training_paradigm"]
+    paradigm = importlib.import_module(f"eegt.modules.{paradigm_name}")
+    module = paradigm.LightningModule.load_from_checkpoint(path, map_location="cpu")
+    return module.model
 
 
 class Attention:

@@ -56,8 +56,8 @@ def collate_decorator(collate_fn, args):
 
 
 class LightningModule(base.LightningModule):
-    def __init__(self, hparams):
-        super().__init__(hparams)
+    def __init__(self, hparams, model=None):
+        super().__init__(hparams, model)
         if self.hparams.dataset_loss_weight > 0:
             # store weights for loss weighting
             self.register_buffer(
