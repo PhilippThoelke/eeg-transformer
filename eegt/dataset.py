@@ -92,9 +92,15 @@ class RawDataset(Dataset):
         return (1 / counts).tolist()
 
     def sample_weights(self, indices=None):
-        class_weights = np.array(self.class_weights(indices=indices))
-        # return sample-wise class weight
-        return class_weights[self.condition_ids[indices]]
+        # take dataset, subject and condition into account
+        groups = self.metadata["subject"].str.cat(self.metadata["condition"], "-")
+        if indices is not None:
+            groups = groups.iloc[indices]
+        group_ids = groups.factorize()[0]
+
+        # compute sample-wise weight
+        _, inv, counts = np.unique(group_ids, return_inverse=True, return_counts=True)
+        return 1 / counts[inv]
 
     def __len__(self):
         return len(self.metadata)
