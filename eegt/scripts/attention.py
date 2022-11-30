@@ -4,7 +4,7 @@ import glob
 from tqdm import tqdm
 import torch
 from torch.utils.data import DataLoader, Subset
-from eegt.modules.simclr import LightningModule
+from eegt import utils
 from eegt.dataset import RawDataset
 
 
@@ -13,7 +13,7 @@ def main(model_dir, data_path, label_path):
     model_path = glob.glob(join(model_dir, "checkpoints", "*"))
     if len(model_path) > 1:
         warnings.warn(f"Found multiple model checkpoints, choosing {model_path[0]}.")
-    model = LightningModule.load_from_checkpoint(model_path[0])
+    model = utils.load_lightning_module(model_path[0])
     model.eval().freeze()
 
     if data_path is None:
