@@ -89,12 +89,18 @@ def temporal_dropout(x, ch_pos, mask, max_samples=64, prob=0.2):
     return x, ch_pos, mask
 
 
-def channel_dropout(x, ch_pos, mask, prob=0.2):
-    """Randomly mask out channels"""
+def channel_dropout(x, ch_pos, mask, min_rate=0.1, max_rate=0.7):
+    """Randomly mask out channels with a probability between min_rate and max_rate"""
     if mask is None:
         mask = torch.ones(x.size(0), x.size(2), dtype=torch.bool, device=x.device)
+    # get a dropout probability between min_rate and max_rate
+    prob = (torch.rand((1,)) * (max_rate - min_rate) + min_rate).item()
+    # randomly drop channels
     dropout_mask = torch.rand(mask.shape, device=mask.device) < prob
     mask[dropout_mask] = False
+    # make sure not to drop full samples
+    for idx in torch.where(~mask.any(dim=1))[0]:
+        mask[idx, 0] = True
     return x, ch_pos, mask
 
 
