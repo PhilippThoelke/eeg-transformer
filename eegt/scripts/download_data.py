@@ -1,10 +1,13 @@
+import os
 from os.path import join, exists
 from abc import ABC, abstractmethod
 import hashlib
 import pickle
 import codecs
+from glob import glob
 from tqdm import tqdm
 import mne
+from mne.io import read_raw
 from mne.channels import make_standard_montage
 from mne.channels.montage import transform_to_head
 import numpy as np
@@ -58,11 +61,11 @@ class ProcessedDataset(ABC):
         max_subjects=-1,
         **kwargs,
     ):
-        assert hasattr(
-            self, "line_freq"
+        assert (
+            hasattr(self, "line_freq") and self.line_freq is not None
         ), f"{type(self).__name__} doesn't implement the line_freq attribute."
-        assert hasattr(
-            self, "subject_ids"
+        assert (
+            hasattr(self, "subject_ids") and self.subject_ids is not None
         ), f"{type(self).__name__} doesn't implement the subject_ids attribute."
 
         self.sfreq = sfreq
@@ -476,6 +479,77 @@ class Concentration(ProcessedDataset):
         raw.annotations.duration = np.array(final_duration)
 
 
+class TUHEEG(ProcessedDataset):
+    """This class will not automatically download the TUH EEG Corpus.Please follow
+    the instructions at https://isip.piconepress.com/projects/tuh_eeg/html/downloads.shtml#c_tueg"""
+
+    line_freq = 60
+    subject_ids = None
+    ch_names_1020 = make_standard_montage("standard_1020").ch_names
+
+    def __init__(self, path, *args, **kwargs):
+        assert exists(path), (
+            f"{path} does not exist, please correct the "
+            "path argument or download the dataset"
+        )
+        self.path = path
+
+        # indexing dataset
+        subj_paths = glob(join(path, "*", "*"))
+        self.subject2group = {
+            p.split(os.sep)[-1]: p.split(os.sep)[-2] for p in subj_paths
+        }
+        self.subject_ids = sorted(list(self.subject2group.keys()))
+
+        super().__init__(*args, **kwargs)
+
+    def instantiate(self, subject_id):
+        raw_paths = glob(
+            join(self.path, self.subject2group[subject_id], subject_id, "**", "*.edf"),
+            recursive=True,
+        )
+
+        raw_datasets = []
+        for path in raw_paths:
+            raw = read_raw(path)
+
+            raw.rename_channels(TUHEEG.format_channel, allow_duplicates=True)
+            raw.drop_channels([ch for ch in raw.ch_names if ch.startswith("unknown")])
+            raw.set_montage(make_standard_montage("standard_1020"))
+
+            raw_datasets.append(BaseDataset(raw))
+
+        dset = BaseConcatDataset(raw_datasets)
+        # create dataset description
+        desc = pd.DataFrame([subject_id] * len(dset.description), columns=["subject"])
+        dset.set_description(desc)
+        return dset
+
+    def prepare_annotations(self, raw):
+        raise RuntimeError(
+            "Using annotations is currently not implemented for this dataset"
+        )
+
+    def format_channel(ch):
+        if not ch.startswith("EEG "):
+            print("UNKNOWN CHANNEL", ch)
+            return "unknown"
+        ch = ch[4:]
+
+        parts = ch.split("-")
+        if len(parts) < 2:
+            print("UNKNOWN FORMAT", ch)
+            return "unknown"
+
+        parts[0] = parts[0].replace("FP", "Fp").replace("Z", "z")
+
+        if parts[0] not in TUHEEG.ch_names_1020:
+            print("CHANNEL NOT IN 10/20 NAMES", parts[0])
+            return "unknown"
+
+        return parts[0]
+
+
 if __name__ == "__main__":
     result_dir = "data/"
     epoch_length = 1
@@ -496,6 +570,7 @@ if __name__ == "__main__":
         Shin2017B(sfreq=sfreq, use_annotations=use_annotations),
         Cho2017(sfreq=sfreq, use_annotations=use_annotations),
         Concentration(sfreq=sfreq, use_annotations=use_annotations),
+        TUHEEG(path="data/tuh_eeg", sfreq=sfreq, use_annotations=use_annotations),
     ]
 
     # prepare processing the data
