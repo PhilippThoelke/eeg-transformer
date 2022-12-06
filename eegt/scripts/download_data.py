@@ -201,10 +201,24 @@ class PhysionetMI(ProcessedDataset):
 
             if run == 1:
                 # baseline: eyes open
-                raw.annotations.rename(dict(T0="rest-eyes_open"))
+                raw.annotations.rename(
+                    dict(
+                        zip(
+                            raw.annotations.description,
+                            ["rest-eyes_open"] * len(raw.annotations.description),
+                        )
+                    )
+                )
             elif run == 2:
                 # baseline: eyes closed
-                raw.annotations.rename(dict(T0="rest-eyes_closed"))
+                raw.annotations.rename(
+                    dict(
+                        zip(
+                            raw.annotations.description,
+                            ["rest-eyes_closed"] * len(raw.annotations.description),
+                        )
+                    )
+                )
             elif run in [3, 7, 11]:
                 # motor execution: left hand vs right hand
                 raw.annotations.rename(
@@ -670,6 +684,9 @@ if __name__ == "__main__":
             stage["stage"] = "preprocessing"
             pbar.set_postfix(stage)
             subj = dset.load_subject(subj_idx)
+
+            # drop recordings that are too short for a single window
+            subj = [s for s in subj if len(s) >= int(sfreq * epoch_length)]
 
             # extract windows from epochs
             stage["stage"] = "windowing"
