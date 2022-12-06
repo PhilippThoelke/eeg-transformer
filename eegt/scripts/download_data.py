@@ -193,7 +193,7 @@ class PhysionetMI(ProcessedDataset):
     def instantiate(self, subject_id):
         raw_datasets = []
         for run in range(1, 15):
-            raw = read_raw(eegbci.load_data(subject_id, run)[0])
+            raw = read_raw(eegbci.load_data(subject_id, run, update_path=True)[0])
             raw.rename_channels(
                 dict(zip(raw.ch_names, PhysionetMI.format_channels(raw.ch_names)))
             )
