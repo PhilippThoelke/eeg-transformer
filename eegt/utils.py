@@ -13,7 +13,7 @@ def load_model(path):
 
 
 def load_lightning_module(path):
-    paradigm_name = torch.load(path)["hyper_parameters"]["training_paradigm"]
+    paradigm_name = torch.load(path, map_location="cpu")["hyper_parameters"]["training_paradigm"]
     paradigm = importlib.import_module(f"eegt.modules.{paradigm_name}")
     module = paradigm.LightningModule.load_from_checkpoint(path, map_location="cpu")
     return module
