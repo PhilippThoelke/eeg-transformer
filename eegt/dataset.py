@@ -41,18 +41,6 @@ class RawDataset(Dataset):
         # load metadata CSV
         self.metadata = pd.read_csv(self.label_path, index_col=0)
 
-        # potentially drop some conditions
-        conditions = args.get("conditions", "all")
-        if isinstance(conditions, list) and len(conditions) == 1:
-            conditions = conditions[0]
-        if conditions != "all":
-            if not isinstance(conditions, list):
-                conditions = [conditions]
-            mask = np.zeros(self.metadata.shape[0], dtype=bool)
-            for cond in conditions:
-                mask = mask | (self.metadata["condition"] == cond)
-            self.metadata = self.metadata[mask]
-
         # create unique indices and mappings for subjects, conditions and datasets
         self.subject_ids, self.subject_mapping = self.metadata["subject"].factorize()
         self.condition_ids, self.condition_mapping = self.metadata[
