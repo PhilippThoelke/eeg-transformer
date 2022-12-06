@@ -168,3 +168,9 @@ class RawDataset(Dataset):
     def id2condition(self, condition_id):
         # mapping from index to condition identifier
         return self.condition_mapping[condition_id]
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}(len={len(self)}, n_conditions={len(self.condition_mapping)}, "
+            f"n_subjects={len(self.subject_mapping)}, n_datasets={len(self.dataset_mapping)})"
+        )
