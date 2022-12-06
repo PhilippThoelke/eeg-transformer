@@ -10,6 +10,7 @@ import mne
 from mne.io import read_raw
 from mne.channels import make_standard_montage
 from mne.channels.montage import transform_to_head
+from mne.datasets import eegbci
 import numpy as np
 import pandas as pd
 from braindecode.datasets import (
@@ -190,25 +191,71 @@ class PhysionetMI(ProcessedDataset):
     subject_ids = list(range(1, 110))
 
     def instantiate(self, subject_id):
-        return MOABBDataset(
-            "PhysionetMI",
-            subject_id,
-            dataset_kwargs=dict(imagined=True, executed=True),
-        )
-
-    def label_transform(self, label, description, raw):
-        if label == "rest":
-            return label
-
-        run_idx = int(raw.filenames[0][-6:-4])
-        if run_idx in [3, 5, 7, 9, 11, 13]:
-            return "executed_" + label
-        elif run_idx in [4, 6, 8, 10, 12, 14]:
-            return "imagined_" + label
-        else:
-            raise ValueError(
-                f"Unknown run index {run_idx}, expected to be between 3 and 14."
+        raw_datasets = []
+        for run in range(1, 15):
+            raw = read_raw(eegbci.load_data(subject_id, run)[0])
+            raw.rename_channels(
+                dict(zip(raw.ch_names, PhysionetMI.format_channels(raw.ch_names)))
             )
+            raw.set_montage(make_standard_montage("standard_1005"))
+
+            if run == 1:
+                # baseline: eyes open
+                raw.annotations.rename(dict(T0="rest-eyes_open"))
+            elif run == 2:
+                # baseline: eyes closed
+                raw.annotations.rename(dict(T0="rest-eyes_closed"))
+            elif run in [3, 7, 11]:
+                # motor execution: left hand vs right hand
+                raw.annotations.rename(
+                    dict(
+                        T0="rest-between_trial",
+                        T1="execution-left_hand",
+                        T2="execution-right_hand",
+                    )
+                )
+            elif run in [4, 8, 12]:
+                # motor imagery: left hand vs right hand
+                raw.annotations.rename(
+                    dict(
+                        T0="rest-between_trial",
+                        T1="imagery-left_hand",
+                        T2="imagery-right_hand",
+                    )
+                )
+            elif run in [5, 9, 13]:
+                # motor execution: hands vs feet
+                raw.annotations.rename(
+                    dict(
+                        T0="rest-between_trial",
+                        T1="execution-fists",
+                        T2="execution-feet",
+                    )
+                )
+            elif run in [6, 10, 14]:
+                # motor imagery: hands vs feet
+                raw.annotations.rename(
+                    dict(T0="rest-between_trial", T1="imagery-fists", T2="imagery-feet")
+                )
+            raw_datasets.append(BaseDataset(raw))
+
+        dset = BaseConcatDataset(raw_datasets)
+        # create dataset description
+        desc = pd.DataFrame([subject_id] * len(dset.description), columns=["subject"])
+        dset.set_description(desc)
+        return dset
+
+    def format_channels(ch_names):
+        names = []
+        for name in ch_names:
+            std_name = name.strip(".")
+            std_name = std_name.upper()
+            if std_name.endswith("Z"):
+                std_name = std_name[:-1] + "z"
+            if std_name.startswith("FP"):
+                std_name = "Fp" + std_name[2:]
+            names.append(std_name)
+        return names
 
 
 class Zhou2016(ProcessedDataset):
