@@ -6,6 +6,7 @@ import torch
 from torch.utils.data import DataLoader, Subset
 from eegt import utils
 from eegt.dataset import RawDataset
+from eegt.utils import Attention, get_dataloader
 
 
 def main(model_dir, data_path, label_path):
@@ -23,9 +24,10 @@ def main(model_dir, data_path, label_path):
 
     # load dataset
     data = RawDataset(model.hparams, data_path=data_path, label_path=label_path)
-    splits = torch.load(join(model_dir, "splits.pt"))["val_idx"]
-    data = Subset(data, splits)
-    dl = DataLoader(data, batch_size=64, num_workers=4)
+    val_idx = None
+    if model.hparams.data_path == data_path:
+        val_idx = torch.load(join(model_dir, "splits.pt"))["val_idx"]
+    dl = get_dataloader(model.hparams, data, indices=val_idx, weighted_sampler=False)
 
     # iterate over the dataset
     acc = 0
@@ -63,8 +65,8 @@ def main(model_dir, data_path, label_path):
             labels,
             subjects,
             model.hparams,
-            data.dataset.condition_mapping,
-            data.dataset.subject_mapping,
+            data.condition_mapping,
+            data.subject_mapping,
         ),
         join(model_dir, "attention.pt"),
     )

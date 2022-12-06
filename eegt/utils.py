@@ -1,3 +1,4 @@
+from copy import deepcopy
 from functools import partial
 import importlib
 import numpy as np
@@ -38,7 +39,24 @@ def split_data(data, val_subject_ratio):
     return np.concatenate(train_idxs), np.concatenate(val_idxs)
 
 
-def get_dataloader(args, full_dataset, indices=None, training=False):
+def get_dataloader(hparams, full_dataset, indices=None, training=False, **kwargs):
+    """
+    Instantiate a preconfigured DataLoader
+
+    args:
+        hparams (argparse.Namespace): hyperparameters from the training script or checkpoint
+        full_dataset (RawDataset): the dataset object to be used
+        indices (Tensor, optional): if set, use a subset of the data given by the indices
+        training (bool, optional): whether to configure the DataLoader for training or validation
+        **kwargs: additional arguments overwriting hparams fields
+
+    returns:
+        a fully configured dataloader
+    """
+    # update hparams with kwargs
+    hparams = deepcopy(hparams)
+    hparams.__dict__.update(kwargs)
+
     # use only a subset of the data
     if indices is not None:
         data = Subset(full_dataset, indices)
@@ -48,9 +66,9 @@ def get_dataloader(args, full_dataset, indices=None, training=False):
     # prepare the data collate function
     collate_fn = RawDataset.collate
     # potentially wrap the collate function in a paradigm-specific way
-    paradigm = importlib.import_module(f"eegt.modules.{args.training_paradigm}")
+    paradigm = importlib.import_module(f"eegt.modules.{hparams.training_paradigm}")
     if hasattr(paradigm, "collate_decorator"):
-        collate_fn = paradigm.collate_decorator(collate_fn, args, training)
+        collate_fn = paradigm.collate_decorator(collate_fn, hparams, training)
         assert collate_fn is not None, (
             f"{paradigm.__name__}.collate_decorator "
             "did not return a collate function"
@@ -58,13 +76,13 @@ def get_dataloader(args, full_dataset, indices=None, training=False):
 
     # create sampler
     sampler = None
-    if args.weighted_sampler:
+    if hparams.weighted_sampler:
         sampler = WeightedRandomSampler(full_dataset.sample_weights(indices), len(data))
 
     # instantiate dataloader
     return DataLoader(
         data,
-        batch_size=args.batch_size,
+        batch_size=hparams.batch_size,
         collate_fn=collate_fn,
         sampler=sampler,
         shuffle=training if sampler is None else False,
