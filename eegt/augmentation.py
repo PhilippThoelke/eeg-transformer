@@ -7,7 +7,7 @@ def gaussian_noise(x, ch_pos, mask, noise_scale=0.1):
     return x + torch.randn_like(x) * x.std() * noise_scale, ch_pos, mask
 
 
-def gaussian_noise_channels(x, ch_pos, mask, noise_scale=0.1):
+def gaussian_noise_channel_pos(x, ch_pos, mask, noise_scale=0.1):
     """Add Gaussian noise to the channel positions"""
     return x, ch_pos + torch.randn_like(ch_pos) * ch_pos.std() * noise_scale, mask
 
@@ -30,7 +30,7 @@ def rescale(x, ch_pos, mask, max_strength=0.3):
     return (x - mean) * scalers + mean, ch_pos, mask
 
 
-def rescale_channels(x, ch_pos, mask, max_strength=0.1):
+def rescale_channel_pos(x, ch_pos, mask, max_strength=0.1):
     """Scale channel positions by a random scalar around 1"""
     scalers = torch.rand(ch_pos.size(0), 1, 1, device=ch_pos.device)
     scalers = scalers * 2 * max_strength + 1 - max_strength
@@ -45,7 +45,7 @@ def random_mean(x, ch_pos, mask, max_strength=0.15):
     return x + means, ch_pos, mask
 
 
-def random_mean_channels(x, ch_pos, mask, max_strength=0.1):
+def random_mean_channel_pos(x, ch_pos, mask, max_strength=0.1):
     """Add a random mean to the channel positions"""
     means = torch.rand(ch_pos.size(0), 1, 1, device=x.device)
     means = means * 2 * max_strength - max_strength
@@ -126,12 +126,12 @@ def randomize_phase(x, ch_pos, mask, strength=0.5):
 
 augmentations = [
     gaussian_noise,
-    gaussian_noise_channels,
+    gaussian_noise_channel_pos,
     gaussian_noise_freq,
     rescale,
-    rescale_channels,
+    rescale_channel_pos,
     random_mean,
-    random_mean_channels,
+    random_mean_channel_pos,
     shift_samples,
     flip_sign,
     resample,
