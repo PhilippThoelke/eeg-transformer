@@ -5,6 +5,7 @@ import numpy as np
 from functools import reduce
 import torch
 from torch.utils.data import DataLoader, Subset, WeightedRandomSampler
+import pytorch_lightning as pl
 from eegt.dataset import RawDataset
 
 
@@ -13,7 +14,9 @@ def load_model(path):
 
 
 def load_lightning_module(path):
-    paradigm_name = torch.load(path, map_location="cpu")["hyper_parameters"]["training_paradigm"]
+    paradigm_name = torch.load(path, map_location="cpu")["hyper_parameters"][
+        "training_paradigm"
+    ]
     paradigm = importlib.import_module(f"eegt.modules.{paradigm_name}")
     module = paradigm.LightningModule.load_from_checkpoint(path, map_location="cpu")
     return module
@@ -93,7 +96,10 @@ def get_dataloader(hparams, full_dataset, indices=None, training=False, **kwargs
 
 class Attention:
     def __init__(self, model):
-        self.model = model
+        if isinstance(model, pl.LightningModule):
+            self.encoder_model = model.model
+        else:
+            self.encoder_model = model
         self.handles = []
         self.attn = []
 
@@ -104,7 +110,7 @@ class Attention:
         def attention_hook(module, input, output, attn):
             attn.append(output[1])
 
-        for encoder_layer in self.model.encoder.encoder_layers:
+        for encoder_layer in self.encoder_model.encoder_layers:
             hook = partial(attention_hook, attn=self.attn)
             self.handles.append(encoder_layer.mha.register_forward_hook(hook))
         return self
