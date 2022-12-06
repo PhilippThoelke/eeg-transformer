@@ -1,4 +1,5 @@
 from os.path import exists, expanduser
+from copy import deepcopy
 import numpy as np
 import pandas as pd
 import pickle
@@ -10,20 +11,21 @@ import warnings
 
 
 class RawDataset(Dataset):
-    def __init__(self, args={}, **kwargs):
-        if not isinstance(args, dict):
-            args = args.__dict__
-        args.update(kwargs)
+    def __init__(self, hparams={}, **kwargs):
+        hparams = deepcopy(hparams)
+        if not isinstance(hparams, dict):
+            hparams = hparams.__dict__
+        hparams.update(kwargs)
         assert (
-            "data_path" in args and "label_path" in args
+            "data_path" in hparams and "label_path" in hparams
         ), "Arguments require at least data_path and label_path to be defined"
 
-        self.data_path = expanduser(args.get("data_path"))
-        self.label_path = expanduser(args.get("label_path"))
-        self.sample_rate = args.get("sample_rate")
-        self.notch_freq = args.get("notch_freq")
-        self.low_pass = args.get("low_pass")
-        self.high_pass = args.get("high_pass")
+        self.data_path = expanduser(hparams.get("data_path"))
+        self.label_path = expanduser(hparams.get("label_path"))
+        self.sample_rate = hparams.get("sample_rate")
+        self.notch_freq = hparams.get("notch_freq")
+        self.low_pass = hparams.get("low_pass")
+        self.high_pass = hparams.get("high_pass")
 
         if not exists(self.data_path):
             raise FileNotFoundError(f"Data file not found: {self.data_path}")
