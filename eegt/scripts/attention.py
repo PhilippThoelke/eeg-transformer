@@ -1,12 +1,12 @@
 import warnings
-from os.path import join
+from os.path import join, basename
 import glob
 from tqdm import tqdm
 import torch
 from torch.utils.data import DataLoader, Subset
 from eegt import utils
 from eegt.dataset import RawDataset
-from eegt.utils import Attention, get_dataloader
+from eegt.utils import Attention, rollout, get_dataloader
 
 
 def main(model_dir, data_path, label_path):
@@ -25,28 +25,29 @@ def main(model_dir, data_path, label_path):
     # load dataset
     data = RawDataset(model.hparams, data_path=data_path, label_path=label_path)
     val_idx = None
-    if model.hparams.data_path == data_path:
+    if basename(model.hparams.data_path) == basename(data_path):
         val_idx = torch.load(join(model_dir, "splits.pt"))["val_idx"]
     dl = get_dataloader(model.hparams, data, indices=val_idx, weighted_sampler=False)
 
     # iterate over the dataset
     acc = 0
-    attn, predictions, labels, subjects, confidences = [], [], [], [], []
+    attn, predictions, labels, subjects, datasets, confidences = [], [], [], [], [], []
     prog = tqdm(dl, desc="extracting attention weights")
-    for i, (x, ch_pos, mask, y, subj) in enumerate(prog):
+    for i, (x, ch_pos, mask, condition, subject, dataset) in enumerate(prog):
         # extract attention weights
         with Attention(model) as a:
             pred = model(x, ch_pos, mask)
 
         # save batchwise metrics
         attn.append(rollout(a.get()))
-        labels.append(y)
+        labels.append(condition)
         predictions.append(pred.argmax(dim=-1))
         confidences.append(pred.max(dim=-1).values)
-        subjects.append(subj)
+        subjects.append(subject)
+        datasets.append(dataset)
 
         # compute batchwise accuracy
-        acc += (pred.argmax(dim=-1) == y).float().mean().item()
+        acc += (pred.argmax(dim=-1) == condition).float().mean().item()
         prog.set_postfix(dict(val_acc=acc / (i + 1)))
     acc /= len(dl)
     print("validtion accuracy:", acc)
@@ -56,6 +57,7 @@ def main(model_dir, data_path, label_path):
     predictions = torch.cat(predictions)
     confidences = torch.cat(confidences)
     subjects = torch.cat(subjects)
+    datasets = torch.cat(datasets)
 
     torch.save(
         (
@@ -64,9 +66,11 @@ def main(model_dir, data_path, label_path):
             predictions,
             labels,
             subjects,
+            datasets,
             model.hparams,
             data.condition_mapping,
             data.subject_mapping,
+            data.dataset_mapping,
         ),
         join(model_dir, "attention.pt"),
     )
