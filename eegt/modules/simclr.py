@@ -24,6 +24,12 @@ def add_arguments(parser):
         type=float,
         help="weighting for adversarial dataset loss (0 to disable)",
     )
+    parser.add_argument(
+        "--latent-regularization",
+        default=0,
+        type=float,
+        help="weight of l1 norm on the latent space (0 to disable)",
+    )
 
 
 def collate_decorator(collate_fn, args, training=False):
@@ -110,6 +116,10 @@ class LightningModule(base.LightningModule):
         loss = all_losses.sum() / z_proj.size(0)
         self.log(f"{training_stage}_loss", loss)
 
+        # regularize the latent space
+        if self.hparams.latent_regularization > 0:
+            loss = loss + z.norm(p=1, dim=1).mean() * self.hparams.latent_regularization
+
         if self.hparams.dataset_loss_weight > 0:
             # apply dataset prediction network and reverse gradients
             y_pred = self.dataset_predictor(-z + (2 * z).detach())
@@ -119,5 +129,5 @@ class LightningModule(base.LightningModule):
                 f"{training_stage}_dataset_acc",
                 (y_pred.argmax(dim=1) == dataset).float().mean(),
             )
-            return loss + dataset_loss * self.hparams.dataset_loss_weight
+            loss = loss + dataset_loss * self.hparams.dataset_loss_weight
         return loss
