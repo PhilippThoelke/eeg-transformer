@@ -13,6 +13,13 @@ def add_arguments(parser):
         help="number of data augmentation steps during pretraining",
     )
     parser.add_argument(
+        "--augmentation-indices",
+        default=list(range(len(augmentations))),
+        nargs="+",
+        type=int,
+        help="indices of augmentation functions to use",
+    )
+    parser.add_argument(
         "--temperature",
         default=0.5,
         type=float,
@@ -40,9 +47,10 @@ def collate_decorator(collate_fn, args, training=False):
         x_all, ch_pos_all, mask_all = [], [], []
         for k in range(2):
             x_aug, ch_pos_aug, mask_aug = x.clone(), ch_pos.clone(), mask.clone()
-            perm = torch.randperm(len(augmentations))
+            perm = torch.randperm(len(args.augmentation_indices))
             for j in perm[: args.num_augmentations]:
-                x_aug, ch_pos_aug, mask_aug = augmentations[j](
+                augmentation_fn = augmentations[args.augmentation_indices[j]]
+                x_aug, ch_pos_aug, mask_aug = augmentation_fn(
                     x_aug, ch_pos_aug, mask_aug
                 )
             x_all.append(x_aug)
