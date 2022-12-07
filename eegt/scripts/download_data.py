@@ -558,7 +558,9 @@ class TUHEEG(ProcessedDataset):
         # indexing dataset
         subj_paths = glob(join(path, "*", "*"))
         self.subject2group = {
-            p.split(os.sep)[-1]: p.split(os.sep)[-2] for p in subj_paths
+            p.split(os.sep)[-1]: p.split(os.sep)[-2]
+            for p in subj_paths
+            if len(glob(join(p, "**", "*.edf"), recursive=True)) > 0
         }
         self.subject_ids = sorted(list(self.subject2group.keys()))
 
