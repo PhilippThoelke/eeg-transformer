@@ -136,6 +136,12 @@ if __name__ == "__main__":
             help="frequency at which to apply a high pass filter",
         )
         parser.add_argument(
+            "--num-workers",
+            default=8,
+            type=int,
+            help="number of workers for loading the data",
+        )
+        parser.add_argument(
             "--weighted-sampler",
             default=True,
             type=lambda x: bool(distutils.util.strtobool(x)),

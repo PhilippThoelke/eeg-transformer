@@ -89,7 +89,7 @@ def get_dataloader(hparams, full_dataset, indices=None, training=False, **kwargs
         collate_fn=collate_fn,
         sampler=sampler,
         shuffle=training if sampler is None else False,
-        num_workers=8,
+        num_workers=hparams.num_workers,
         prefetch_factor=4,
     )
 
