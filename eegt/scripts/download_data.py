@@ -752,14 +752,15 @@ if __name__ == "__main__":
             pbar.set_postfix(stage)
 
             offset = 0
+            new_metadata = []
             for i in range(len(epochs)):
                 # write epoch to memory mapped NumPy file
                 curr_epoch = epochs[i].T.reshape(-1)
                 file[offset : offset + curr_epoch.size] = curr_epoch
                 file.flush()
 
-                # append a row in the metadata csv
-                metadata.append(
+                # append a row in the metadata list
+                new_metadata.append(
                     [
                         description["subject_label"].iloc[i],  # subject label
                         description["label"].iloc[i],  # class label
@@ -773,13 +774,10 @@ if __name__ == "__main__":
             # free epochs object
             del epochs
 
-            # update memmap shape
-            memmap_len += flat_epochs_len
-
             # write metadata to disk
-            # TODO: append to file on disk instead of writing the whole DataFrame each iteration
-            pd.DataFrame(
-                metadata,
+            df = pd.DataFrame(
+                data=new_metadata,
+                index=range(len(metadata), len(metadata) + len(new_metadata)),
                 columns=[
                     "subject",
                     "condition",
@@ -788,6 +786,16 @@ if __name__ == "__main__":
                     "stop_idx",
                     "channel_pos_pickle",
                 ],
-            ).to_csv(join(result_dir, "label-" + fname + ".csv"))
+            )
+            df.to_csv(
+                join(result_dir, "label-" + fname + ".csv"),
+                mode="w" if memmap_len == 0 else "a",
+                header=memmap_len == 0,
+            )
+
+            # update memmap shape and metadata list
+            memmap_len += flat_epochs_len
+            metadata.extend(new_metadata)
+
             pbar.update()
     pbar.close()
