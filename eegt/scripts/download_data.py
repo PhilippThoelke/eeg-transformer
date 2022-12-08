@@ -580,6 +580,13 @@ class TUHEEG(ProcessedDataset):
             raw.drop_channels([ch for ch in raw.ch_names if ch.startswith("unknown")])
             raw.set_montage(make_standard_montage("standard_1020"))
 
+            # remove pre- and post-recording sections (channels have the same data)
+            data_different = np.where(raw.get_data()[0] != raw.get_data()[1])[0]
+            raw.crop(
+                tmin=data_different[0] / raw.info["sfreq"],
+                tmax=data_different[-1] / raw.info["sfreq"],
+            )
+
             raw_datasets.append(BaseDataset(raw))
 
         dset = BaseConcatDataset(raw_datasets)
