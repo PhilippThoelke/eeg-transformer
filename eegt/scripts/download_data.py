@@ -770,6 +770,7 @@ if __name__ == "__main__":
             memmap_len += flat_epochs_len
 
             # write metadata to disk
+            # TODO: append to file on disk instead of writing the whole DataFrame each iteration
             pd.DataFrame(
                 metadata,
                 columns=[
