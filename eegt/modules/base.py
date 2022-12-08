@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from functools import partial
 import torch
 from torch import nn, optim
 import torch.nn.functional as F
@@ -74,7 +75,7 @@ class LightningModule(pl.LightningModule, ABC):
         )
         # learning rate scheduler
         opt.param_groups[0]["initial_lr"] = self.hparams.learning_rate
-        scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(opt, T_0=2, T_mult=2)
+        scheduler = lr_schedules[self.hparams.lr_schedule](opt)
         return dict(optimizer=opt, lr_scheduler=scheduler, monitor="train_loss")
 
     def training_epoch_end(self, *args, **kwargs):
@@ -103,3 +104,9 @@ class LightningModule(pl.LightningModule, ABC):
 
         # continue with the optimizer step normally
         return super().optimizer_step(*args, **kwargs)
+
+
+lr_schedules = {
+    "cosine": partial(optim.lr_scheduler.CosineAnnealingWarmRestarts, T_0=2, T_mult=2),
+    "exp-decay": partial(optim.lr_scheduler.ExponentialLR, gamma=0.995),
+}

@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import pytorch_lightning as pl
 import eegt
+from eegt.modules.base import lr_schedules
 from eegt import utils
 from eegt.dataset import RawDataset
 
@@ -158,6 +159,13 @@ if __name__ == "__main__":
             default=5e-4,
             type=float,
             help="base learning rate",
+        )
+        parser.add_argument(
+            "--lr-schedule",
+            default="cosine",
+            type=str,
+            choices=list(lr_schedules.keys()),
+            help="learning rate schedule",
         )
         parser.add_argument(
             "--embedding-dim",
