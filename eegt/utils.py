@@ -90,7 +90,7 @@ def get_dataloader(hparams, full_dataset, indices=None, training=False, **kwargs
         sampler=sampler,
         shuffle=training if sampler is None else False,
         num_workers=hparams.num_workers,
-        prefetch_factor=4,
+        prefetch_factor=4 if hparams.num_workers > 0 else None,
     )
 
 
