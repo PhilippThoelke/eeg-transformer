@@ -119,6 +119,10 @@ class ProcessedDataset(ABC):
 
     def preprocess(self, raw_dset):
         """Apply preprocessing and extract epochs"""
+        if raw_dset is None:
+            # broken subject data
+            return None
+
         if isinstance(raw_dset, BaseDataset):
             raw_dset = BaseConcatDataset([raw_dset])
 
@@ -582,12 +586,19 @@ class TUHEEG(ProcessedDataset):
 
             # remove pre- and post-recording sections (channels have the same data)
             data_different = np.where(raw.get_data()[0] != raw.get_data()[1])[0]
+            if len(data_different) == 0:
+                # no usable data, skip this file
+                continue
             raw.crop(
                 tmin=data_different[0] / raw.info["sfreq"],
                 tmax=data_different[-1] / raw.info["sfreq"],
             )
 
             raw_datasets.append(BaseDataset(raw))
+
+        if len(raw_datasets) == 0:
+            # data for this subject is broken
+            return None
 
         dset = BaseConcatDataset(raw_datasets)
         # create dataset description
@@ -693,9 +704,18 @@ if __name__ == "__main__":
             stage["stage"] = "preprocessing"
             pbar.set_postfix(stage)
             subj = dset.load_subject(subj_idx)
+            if subj is None:
+                # encountered a broken subject
+                pbar.update()
+                continue
 
             # drop recordings that are too short for a single window
             subj = [s for s in subj if len(s) >= int(sfreq * epoch_length)]
+
+            if len(subj)==0:
+                # not enough data to create a single epoch
+                pbar.update()
+                continue
 
             # extract windows from epochs
             stage["stage"] = "windowing"
