@@ -16,6 +16,13 @@ def add_arguments(parser):
         help="probability to apply data augmentation to the current batch",
     )
     parser.add_argument(
+        "--augmentation-indices",
+        default=list(range(len(augmentations))),
+        nargs="+",
+        type=int,
+        help="indices of augmentation functions to use",
+    )
+    parser.add_argument(
         "--dataset-loss-weight",
         default=0.5,
         type=float,
@@ -32,8 +39,9 @@ def collate_decorator(collate_fn, args, training=False):
 
         if torch.rand((1,)).item() < args.augmentation_prob:
             # apply data augmentation to the current batch
-            idx = torch.randint(0, len(augmentations), (1,)).item()
-            x, ch_pos, mask = augmentations[idx](x, ch_pos, mask)
+            idx = torch.randperm(len(args.augmentation_indices))[0].item()
+            augmentation_fn = augmentations[args.augmentation_indices[idx]]
+            x, ch_pos, mask = augmentation_fn(x, ch_pos, mask)
 
         # return augmented batch
         return x, ch_pos, mask, condition, subject, dataset
