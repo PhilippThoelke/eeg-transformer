@@ -82,6 +82,11 @@ def get_dataloader(hparams, full_dataset, indices=None, training=False, **kwargs
     if hparams.weighted_sampler:
         sampler = WeightedRandomSampler(full_dataset.sample_weights(indices), len(data))
 
+    # the argument prefetch_factor is only allowed if num_workers > 0
+    kwargs = {}
+    if hparams.num_workers > 0:
+        kwargs["prefetch_factor"]=4
+        
     # instantiate dataloader
     return DataLoader(
         data,
@@ -90,7 +95,7 @@ def get_dataloader(hparams, full_dataset, indices=None, training=False, **kwargs
         sampler=sampler,
         shuffle=training if sampler is None else False,
         num_workers=hparams.num_workers,
-        prefetch_factor=4 if hparams.num_workers > 0 else None,
+        **kwargs
     )
 
 
