@@ -1,4 +1,4 @@
-import distutils
+from distutils import util
 import numpy as np
 import torch
 from torch import nn
@@ -13,7 +13,7 @@ def add_arguments(parser):
     parser.add_argument(
         "--fourier-loss",
         default=False,
-        type=lambda x: bool(distutils.util.strtobool(x)),
+        type=lambda x: bool(util.strtobool(x)),
         help="whether to compute loss in the frequency or time domain",
     )
     parser.add_argument(

@@ -1,6 +1,6 @@
 import pkgutil
 import importlib
-import distutils
+from distutils import util
 import argparse
 from os import makedirs, path
 import numpy as np
@@ -145,7 +145,7 @@ if __name__ == "__main__":
         parser.add_argument(
             "--weighted-sampler",
             default=True,
-            type=lambda x: bool(distutils.util.strtobool(x)),
+            type=lambda x: bool(util.strtobool(x)),
             help="if true, use a weighted random sampler to counteract imbalance",
         )
         parser.add_argument(
