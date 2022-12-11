@@ -14,10 +14,10 @@ def add_arguments(parser):
     )
     parser.add_argument(
         "--augmentation-indices",
-        default=list(range(len(augmentations))),
+        default=[-1],
         nargs="+",
         type=int,
-        help="indices of augmentation functions to use",
+        help="indices of augmentation functions to use (-1 to use all)",
     )
     parser.add_argument(
         "--temperature",
@@ -43,13 +43,18 @@ def collate_decorator(collate_fn, args, training=False):
     def augment(batch, eps=1e-7):
         x, ch_pos, mask, condition, subject, dataset = collate_fn(batch)
 
+        # define augmentation indices
+        augmentation_indices = args.augmentation_indices
+        if len(augmentation_indices) == 1 and augmentation_indices[0] == -1:
+            augmentation_indices = list(range(len(augmentations)))
+
         # augment data
         x_all, ch_pos_all, mask_all = [], [], []
         for k in range(2):
             x_aug, ch_pos_aug, mask_aug = x.clone(), ch_pos.clone(), mask.clone()
-            perm = torch.randperm(len(args.augmentation_indices))
+            perm = torch.randperm(len(augmentation_indices))
             for j in perm[: args.num_augmentations]:
-                augmentation_fn = augmentations[args.augmentation_indices[j]]
+                augmentation_fn = augmentations[augmentation_indices[j]]
                 x_aug, ch_pos_aug, mask_aug = augmentation_fn(
                     x_aug, ch_pos_aug, mask_aug
                 )

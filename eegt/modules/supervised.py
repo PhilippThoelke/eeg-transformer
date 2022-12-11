@@ -17,10 +17,10 @@ def add_arguments(parser):
     )
     parser.add_argument(
         "--augmentation-indices",
-        default=list(range(len(augmentations))),
+        default=[-1],
         nargs="+",
         type=int,
-        help="indices of augmentation functions to use",
+        help="indices of augmentation functions to use (-1 to use all)",
     )
     parser.add_argument(
         "--dataset-loss-weight",
@@ -37,10 +37,15 @@ def collate_decorator(collate_fn, args, training=False):
     def augment(batch):
         x, ch_pos, mask, condition, subject, dataset = collate_fn(batch)
 
+        # define augmentation indices
+        augmentation_indices = args.augmentation_indices
+        if len(augmentation_indices) == 1 and augmentation_indices[0] == -1:
+            augmentation_indices = list(range(len(augmentations)))
+
         if torch.rand((1,)).item() < args.augmentation_prob:
             # apply data augmentation to the current batch
-            idx = torch.randperm(len(args.augmentation_indices))[0].item()
-            augmentation_fn = augmentations[args.augmentation_indices[idx]]
+            idx = torch.randperm(len(augmentation_indices))[0].item()
+            augmentation_fn = augmentations[augmentation_indices[idx]]
             x, ch_pos, mask = augmentation_fn(x, ch_pos, mask)
 
         # return augmented batch
