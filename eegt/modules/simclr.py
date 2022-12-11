@@ -75,17 +75,17 @@ def collate_decorator(collate_fn, args, training=False):
 
 
 class LightningModule(base.LightningModule):
-    def __init__(self, hparams, model=None):
-        super().__init__(hparams, model)
+    def __init__(self, hparams, model=None, **kwargs):
+        super().__init__(hparams, model, **kwargs)
+
+        # define dataset weights
         use_dataset_loss = (
             self.hparams.dataset_loss_weight > 0
-            and len(self.hparams.dataset_weights) > 1
+            and "dataset_weights" in kwargs
+            and len(kwargs["dataset_weights"]) > 1
         )
         if use_dataset_loss:
-            # store weights for loss weighting
-            self.register_buffer(
-                "dataset_weights", torch.tensor(self.hparams.dataset_weights)
-            )
+            self.dataset_weights = torch.tensor(kwargs["dataset_weights"])
 
         # projection head
         self.projection = nn.Sequential(
@@ -99,9 +99,7 @@ class LightningModule(base.LightningModule):
             self.dataset_predictor = nn.Sequential(
                 nn.Linear(self.hparams.embedding_dim, self.hparams.embedding_dim // 2),
                 nn.ReLU(),
-                nn.Linear(
-                    self.hparams.embedding_dim // 2, len(self.hparams.dataset_weights)
-                ),
+                nn.Linear(self.hparams.embedding_dim // 2, len(self.dataset_weights)),
             )
 
     def step(self, batch, batch_idx, training_stage):

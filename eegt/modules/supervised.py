@@ -55,19 +55,25 @@ def collate_decorator(collate_fn, args, training=False):
 
 
 class LightningModule(base.LightningModule):
-    def __init__(self, hparams, model=None):
-        super().__init__(hparams, model)
+    def __init__(self, hparams, model=None, **kwargs):
+        if "n_classes" not in hparams:
+            assert (
+                "class_weights" in kwargs
+            ), "class_weights is a required arg if hparams doesn't define n_classes"
+            hparams.n_classes = len(kwargs["class_weights"])
+
+        super().__init__(hparams, model, **kwargs)
         use_dataset_loss = (
             self.hparams.dataset_loss_weight > 0
-            and len(self.hparams.dataset_weights) > 1
+            and "dataset_weights" in kwargs
+            and len(kwargs["dataset_weights"]) > 1
         )
 
         # store weights for loss weighting
-        self.register_buffer("class_weights", torch.tensor(self.hparams.class_weights))
+        if "class_weights" in kwargs:
+            self.class_weights = torch.tensor(kwargs["class_weights"])
         if use_dataset_loss:
-            self.register_buffer(
-                "dataset_weights", torch.tensor(self.hparams.dataset_weights)
-            )
+            self.dataset_weights = torch.tensor(kwargs["dataset_weights"])
 
         # output network
         self.output_network = nn.Sequential(
@@ -81,9 +87,7 @@ class LightningModule(base.LightningModule):
             self.dataset_predictor = nn.Sequential(
                 nn.Linear(self.hparams.embedding_dim, self.hparams.embedding_dim // 2),
                 nn.ReLU(),
-                nn.Linear(
-                    self.hparams.embedding_dim // 2, len(self.hparams.dataset_weights)
-                ),
+                nn.Linear(self.hparams.embedding_dim // 2, len(self.dataset_weights)),
             )
 
         # initialize confusion matrix dict

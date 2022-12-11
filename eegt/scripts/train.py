@@ -18,8 +18,8 @@ def main(args):
     idx_train, idx_val = utils.split_data(data, args.val_subject_ratio)
 
     # fetch class and dataset weights
-    args.dataset_weights = data.dataset_weights(idx_train)
-    args.class_weights = data.class_weights(idx_train)
+    dataset_weights = data.dataset_weights(idx_train)
+    class_weights = data.class_weights(idx_train)
     # store the size of a single token
     args.token_size = data[0][0].shape[0]
 
@@ -33,7 +33,9 @@ def main(args):
 
     # instantiate PyTorch-Lightning module
     paradigm = importlib.import_module(f"eegt.modules.{args.training_paradigm}")
-    module = paradigm.LightningModule(args, model=model)
+    module = paradigm.LightningModule(
+        args, model=model, class_weights=class_weights, dataset_weights=dataset_weights
+    )
 
     # create dataloaders
     train_dl = utils.get_dataloader(args, data, indices=idx_train, training=True)

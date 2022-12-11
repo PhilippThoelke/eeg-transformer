@@ -8,7 +8,7 @@ from eegt.model import EEGEncoder
 
 
 class LightningModule(pl.LightningModule, ABC):
-    def __init__(self, hparams, model=None):
+    def __init__(self, hparams, model=None, **kwargs):
         super().__init__()
         self.save_hyperparameters(hparams)
         self.model_frozen = False
