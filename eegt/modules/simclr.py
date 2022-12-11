@@ -72,7 +72,11 @@ def collate_decorator(collate_fn, args, training=False):
 class LightningModule(base.LightningModule):
     def __init__(self, hparams, model=None):
         super().__init__(hparams, model)
-        if self.hparams.dataset_loss_weight > 0:
+        use_dataset_loss = (
+            self.hparams.dataset_loss_weight > 0
+            and len(self.hparams.dataset_weights) > 1
+        )
+        if use_dataset_loss:
             # store weights for loss weighting
             self.register_buffer(
                 "dataset_weights", torch.tensor(self.hparams.dataset_weights)
@@ -85,7 +89,7 @@ class LightningModule(base.LightningModule):
             nn.Linear(self.hparams.embedding_dim, self.hparams.embedding_dim),
         )
 
-        if self.hparams.dataset_loss_weight > 0:
+        if use_dataset_loss:
             # dataset prediction network
             self.dataset_predictor = nn.Sequential(
                 nn.Linear(self.hparams.embedding_dim, self.hparams.embedding_dim // 2),
@@ -128,7 +132,7 @@ class LightningModule(base.LightningModule):
         if self.hparams.latent_regularization > 0:
             loss = loss + z.norm(p=1, dim=1).mean() * self.hparams.latent_regularization
 
-        if self.hparams.dataset_loss_weight > 0:
+        if hasattr(self, "dataset_predictor"):
             # apply dataset prediction network and reverse gradients
             y_pred = self.dataset_predictor(-z + (2 * z).detach())
             dataset_loss = F.cross_entropy(y_pred, dataset, self.dataset_weights)
