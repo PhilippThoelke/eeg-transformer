@@ -106,6 +106,7 @@ class LightningModule(pl.LightningModule, ABC):
         return super().optimizer_step(*args, **kwargs)
 
 
+# TODO: improve lr schedule (optim.lr_scheduler.ChainedScheduler)
 lr_schedules = {
     "cosine": partial(optim.lr_scheduler.CosineAnnealingWarmRestarts, T_0=2, T_mult=2),
     "exp-decay": partial(optim.lr_scheduler.ExponentialLR, gamma=0.995),
