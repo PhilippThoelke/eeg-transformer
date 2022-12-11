@@ -41,7 +41,7 @@ class RawDataset(Dataset):
         # memory map the raw data
         self.data = np.memmap(self.data_path, mode="r", dtype=np.float32)
         # load metadata CSV
-        self.metadata = pd.read_csv(self.label_path, index_col=0)
+        self.metadata = pd.read_csv(self.label_path, index_col=0, memory_map=True)
 
         # create unique indices and mappings for subjects, conditions and datasets
         self.subject_ids, self.subject_mapping = self.metadata["subject"].factorize()
@@ -50,13 +50,6 @@ class RawDataset(Dataset):
         ].factorize()
         self.dataset_ids, self.dataset_mapping = (
             self.metadata["subject"].apply(lambda x: x.split("-")[0]).factorize()
-        )
-
-        # decode channel positions
-        self.metadata["channel_pos"] = self.metadata["channel_pos_pickle"].apply(
-            lambda x: pickle.loads(codecs.decode(x.encode(), "base64")).astype(
-                np.float32
-            )
         )
 
     def class_weights(self, indices=None):
@@ -123,9 +116,14 @@ class RawDataset(Dataset):
                     verbose="warning",
                 ).T.astype(np.float32)
 
+        # decode channel positions
+        ch_pos = pickle.loads(
+            codecs.decode(metadata["channel_pos_pickle"].encode(), "base64")
+        ).astype(np.float32)
+
         return [
             torch.from_numpy(x),
-            torch.from_numpy(metadata["channel_pos"]),
+            torch.from_numpy(ch_pos),
             torch.ones(x.shape[1], dtype=torch.bool),
             self.condition_ids[idx],
             self.subject_ids[idx],
