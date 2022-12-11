@@ -26,8 +26,8 @@ def main(result_name, base_dir, arg_hash):
             i for i in range(len(label_files)) if get_hash(label_files[i]) == arg_hash
         ]
     else:
+        indices = list(range(len(label_files)))
         arg_hash = get_hash(label_files[indices[0]])
-        indices = range(len(label_files))
 
     # get resulting dataset paths
     label_path = join(base_dir, f"label-{result_name}_{arg_hash}.csv")
