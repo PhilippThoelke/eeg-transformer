@@ -150,7 +150,7 @@ if __name__ == "__main__":
         )
         parser.add_argument(
             "--gradient-accumulation",
-            default=1,
+            default=None,
             type=int,
             help="number of gradient accumulation steps",
         )
