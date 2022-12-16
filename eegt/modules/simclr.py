@@ -50,7 +50,7 @@ def collate_decorator(collate_fn, args, training=False):
 
         # augment data
         x_all, ch_pos_all, mask_all = [], [], []
-        for k in range(2):
+        for _ in range(2):
             x_aug, ch_pos_aug, mask_aug = x.clone(), ch_pos.clone(), mask.clone()
             perm = torch.randperm(len(augmentation_indices))
             for j in perm[: args.num_augmentations]:
