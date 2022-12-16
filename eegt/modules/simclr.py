@@ -79,12 +79,11 @@ class LightningModule(base.LightningModule):
         super().__init__(hparams, model, **kwargs)
 
         # define dataset weights
-        use_dataset_loss = (
+        if (
             self.hparams.dataset_loss_weight > 0
             and "dataset_weights" in kwargs
             and len(kwargs["dataset_weights"]) > 1
-        )
-        if use_dataset_loss:
+        ):
             self.dataset_weights = torch.tensor(kwargs["dataset_weights"])
 
         # projection head
@@ -94,7 +93,7 @@ class LightningModule(base.LightningModule):
             nn.Linear(self.hparams.embedding_dim, self.hparams.embedding_dim),
         )
 
-        if use_dataset_loss:
+        if hasattr(self, "dataset_weights"):
             # dataset prediction network
             self.dataset_predictor = nn.Sequential(
                 nn.Linear(self.hparams.embedding_dim, self.hparams.embedding_dim // 2),

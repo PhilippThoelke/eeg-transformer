@@ -63,16 +63,15 @@ class LightningModule(base.LightningModule):
             hparams.n_classes = len(kwargs["class_weights"])
 
         super().__init__(hparams, model, **kwargs)
-        use_dataset_loss = (
-            self.hparams.dataset_loss_weight > 0
-            and "dataset_weights" in kwargs
-            and len(kwargs["dataset_weights"]) > 1
-        )
 
         # store weights for loss weighting
         if "class_weights" in kwargs:
             self.class_weights = torch.tensor(kwargs["class_weights"])
-        if use_dataset_loss:
+        if (
+            self.hparams.dataset_loss_weight > 0
+            and "dataset_weights" in kwargs
+            and len(kwargs["dataset_weights"]) > 1
+        ):
             self.dataset_weights = torch.tensor(kwargs["dataset_weights"])
 
         # output network
@@ -82,7 +81,7 @@ class LightningModule(base.LightningModule):
             nn.Linear(self.hparams.embedding_dim // 2, len(self.class_weights)),
         )
 
-        if use_dataset_loss:
+        if hasattr(self, "dataset_weights"):
             # dataset prediction network
             self.dataset_predictor = nn.Sequential(
                 nn.Linear(self.hparams.embedding_dim, self.hparams.embedding_dim // 2),
