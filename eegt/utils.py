@@ -80,13 +80,17 @@ def get_dataloader(hparams, full_dataset, indices=None, training=False, **kwargs
     # create sampler
     sampler = None
     if hparams.weighted_sampler:
+        assert hasattr(full_dataset, "sample_weights"), (
+            "The dataset doesn't implement the sample_weights function, "
+            "please disable weighted sampling."
+        )
         sampler = WeightedRandomSampler(full_dataset.sample_weights(indices), len(data))
 
     # the argument prefetch_factor is only allowed if num_workers > 0
     kwargs = {}
     if hparams.num_workers > 0:
-        kwargs["prefetch_factor"]=4
-        
+        kwargs["prefetch_factor"] = 4
+
     # instantiate dataloader
     return DataLoader(
         data,
@@ -95,7 +99,7 @@ def get_dataloader(hparams, full_dataset, indices=None, training=False, **kwargs
         sampler=sampler,
         shuffle=training if sampler is None else False,
         num_workers=hparams.num_workers,
-        **kwargs
+        **kwargs,
     )
 
 

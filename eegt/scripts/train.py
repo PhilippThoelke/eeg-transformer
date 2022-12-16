@@ -16,26 +16,24 @@ def main(args):
     # load data and split into train and validation set
     data = RawDataset(args)
     idx_train, idx_val = utils.split_data(data, args.val_subject_ratio)
-
-    # fetch class and dataset weights
-    dataset_weights = data.dataset_weights(idx_train)
-    class_weights = data.class_weights(idx_train)
     # store the size of a single token
     args.token_size = data[0][0].shape[0]
 
+    # fetch class and dataset weights
+    lightning_module_kwargs = {}
+    if hasattr(data, "dataset_weights"):
+        lightning_module_kwargs["dataset_weights"] = data.dataset_weights(idx_train)
+    if hasattr(data, "class_weights"):
+        lightning_module_kwargs["class_weights"] = data.class_weights(idx_train)
+
     # handle model loading
-    model = None
     if args.load_model is not None:
-        pl.utilities.rank_zero_info(
-            f"Using pretrained encoder model: {args.load_model}"
-        )
-        model = utils.load_model(args.load_model)
+        pl.utilities.rank_zero_info(f"Using pretrained encoder: {args.load_model}")
+        lightning_module_kwargs["model"] = utils.load_model(args.load_model)
 
     # instantiate PyTorch-Lightning module
     paradigm = importlib.import_module(f"eegt.modules.{args.training_paradigm}")
-    module = paradigm.LightningModule(
-        args, model=model, class_weights=class_weights, dataset_weights=dataset_weights
-    )
+    module = paradigm.LightningModule(args, **lightning_module_kwargs)
 
     # create dataloaders
     train_dl = utils.get_dataloader(args, data, indices=idx_train, training=True)

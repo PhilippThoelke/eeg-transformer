@@ -130,8 +130,10 @@ class LightningModule(base.LightningModule):
         # compute cross entropy loss
         if self.hparams.weighted_sampler:
             loss = F.cross_entropy(y, condition)
-        else:
+        elif hasattr(self, "class_weights"):
             loss = F.cross_entropy(y, condition, self.class_weights)
+        else:
+            loss = F.cross_entropy(y, condition)
         self.log(f"{training_stage}_loss", loss)
 
         # compute accuracy
