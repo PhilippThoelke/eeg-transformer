@@ -14,7 +14,7 @@ from eegt.dataset import RawDataset
 
 def main(args):
     # load data and split into train and validation set
-    data = RawDataset(args)
+    data = utils.get_dataset(args)
     idx_train, idx_val = utils.split_data(data, args.val_subject_ratio)
     # store the size of a single token
     args.token_size = data[0][0].shape[0]

@@ -162,3 +162,26 @@ class RawDataset(Dataset):
             f"{self.__class__.__name__}(len={len(self)}, n_conditions={len(self.condition_mapping)}, "
             f"n_subjects={len(self.subject_mapping)}, n_datasets={len(self.dataset_mapping)})"
         )
+
+
+class ConcatDataset(RawDataset):
+    def __init__(self, datasets):
+        self.datasets = datasets
+
+        # combine metadata from individual datasets
+        self.idx2dset = sum([[i] * len(d) for i, d in enumerate(datasets)], [])
+        self.index_shift = np.cumsum([0] + [len(d) for d in datasets[:-1]])
+        self.metadata = pd.concat([d.metadata for d in datasets], ignore_index=True)
+
+        # create unique indices and mappings for subjects, conditions and datasets
+        self.subject_ids, self.subject_mapping = self.metadata["subject"].factorize()
+        self.condition_ids, self.condition_mapping = self.metadata[
+            "condition"
+        ].factorize()
+        self.dataset_ids, self.dataset_mapping = (
+            self.metadata["subject"].apply(lambda x: x.split("-")[0]).factorize()
+        )
+
+    def __getitem__(self, idx):
+        dset_idx = self.idx2dset[idx]
+        return self.datasets[dset_idx][idx - self.index_shift[dset_idx]]

@@ -1,12 +1,13 @@
 from copy import deepcopy
 from functools import partial
 import importlib
+from glob import glob
 import numpy as np
 from functools import reduce
 import torch
 from torch.utils.data import DataLoader, Subset, WeightedRandomSampler
 import pytorch_lightning as pl
-from eegt.dataset import RawDataset
+from eegt.dataset import RawDataset, ConcatDataset
 
 
 def load_model(path):
@@ -40,6 +41,45 @@ def split_data(data, val_subject_ratio):
         train_idxs.append(np.where(~val_mask & dset_mask)[0])
         val_idxs.append(np.where(val_mask)[0])
     return np.concatenate(train_idxs), np.concatenate(val_idxs)
+
+
+def get_dataset(hparams):
+    """
+    Instantiate a dataset and potentially concatenate multiple RawDatasets.
+
+    args:
+        hparams (argparse.Namespace): hyperparameters from the training script or checkpoint
+
+    returns:
+        an instance of RawDataset or ConcatDataset
+    """
+    is_data_glob = "*" in hparams.data_path
+    is_label_glob = "*" in hparams.label_path
+
+    if not is_data_glob and not is_label_glob:
+        # no glob strings, return a single dataset
+        return RawDataset(hparams)
+    if is_data_glob and is_label_glob:
+        # data and label path is a glob string
+        dpaths = sorted(glob(hparams.data_path))
+        lpaths = sorted(glob(hparams.label_path))
+        assert len(dpaths) == len(lpaths), (
+            f"Found {len(dpaths)} data paths and {len(lpaths)} label paths "
+            "but they should be the same."
+        )
+
+        # load individual datasets
+        datasets = []
+        for dp, lp in zip(dpaths, lpaths):
+            datasets.append(RawDataset(hparams, data_path=dp, label_path=lp))
+        return ConcatDataset(datasets)
+
+    # one of data or label path was a glob string
+    raise RuntimeError(
+        "Either both or none of data and label path should be a glob string. "
+        f"Got data_path: {'glob' if is_data_glob else 'not glob'} and "
+        f"label_path: {'glob' if is_label_glob else 'not glob'}"
+    )
 
 
 def get_dataloader(hparams, full_dataset, indices=None, training=False, **kwargs):
