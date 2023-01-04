@@ -108,6 +108,7 @@ class EEGEncoder(nn.Module):
         # prepend class token to the sequence
         x = torch.cat([self.class_token[None, None].repeat(1, x.size(1), 1), x], dim=0)
         if mask is not None:
+            # add class token to mask
             add_row = torch.ones(mask.size(0), 1, dtype=mask.dtype, device=mask.device)
             mask = torch.cat([add_row, mask], dim=1)
 
