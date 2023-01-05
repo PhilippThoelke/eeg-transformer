@@ -90,10 +90,13 @@ class LightningModule(pl.LightningModule, ABC):
     def optimizer_step(self, *args, **kwargs):
         # learning rate warmup
         if self.global_step < self.hparams.warmup_steps:
-            scheduler = self.lr_schedulers()
-            scheduler.base_lrs[0] = self.hparams.learning_rate * (
+            warm_lr = self.hparams.learning_rate * (
                 (self.global_step + 1) / self.hparams.warmup_steps
             )
+            optimizer = self.optimizers()
+            optimizer.param_groups[0]["lr"] = warm_lr
+            scheduler = self.lr_schedulers()
+            scheduler.base_lrs[0] = warm_lr
 
         # unfreeze pretrained model
         if self.hparams.freeze_steps > 0:
