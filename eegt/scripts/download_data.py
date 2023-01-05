@@ -720,11 +720,13 @@ if __name__ == "__main__":
             # extract windows from epochs
             stage["stage"] = "windowing"
             pbar.set_postfix(stage)
+            window_size = int(sfreq * epoch_length)
+            window_stride = window_size - int(sfreq * epoch_overlap)
             try:
                 windows = create_fixed_length_windows(
                     BaseConcatDataset(subj),
-                    window_size_samples=int(sfreq * epoch_length),
-                    window_stride_samples=int(sfreq * epoch_overlap),
+                    window_size_samples=window_size,
+                    window_stride_samples=window_stride,
                     drop_last_window=True,
                     n_jobs=-1,
                 )
@@ -733,8 +735,8 @@ if __name__ == "__main__":
                 # repeating with a single worker to save memory
                 windows = create_fixed_length_windows(
                     BaseConcatDataset(subj),
-                    window_size_samples=int(sfreq * epoch_length),
-                    window_stride_samples=int(sfreq * epoch_overlap),
+                    window_size_samples=window_size,
+                    window_stride_samples=window_stride,
                     drop_last_window=True,
                     n_jobs=1,
                 )
