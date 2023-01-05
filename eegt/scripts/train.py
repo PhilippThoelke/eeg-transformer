@@ -51,6 +51,8 @@ def main(args):
             pl.callbacks.ModelCheckpoint(monitor="val_loss", mode="min"),
         ],
         accumulate_grad_batches=args.gradient_accumulation,
+        limit_train_batches=args.train_batches,
+        limit_val_batches=args.val_batches,
     )
 
     # store train val splits
@@ -93,6 +95,18 @@ if __name__ == "__main__":
             default=64,
             type=int,
             help="batch size",
+        )
+        parser.add_argument(
+            "--train-batches",
+            default=None,
+            type=int,
+            help="max number of training batches per epoch",
+        )
+        parser.add_argument(
+            "--val-batches",
+            default=None,
+            type=int,
+            help="max number of validation batches per epoch",
         )
         parser.add_argument(
             "--val-subject-ratio",
