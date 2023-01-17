@@ -10,6 +10,7 @@ from tqdm import tqdm
 batch_size = 256
 device = "cuda"
 ckpt_path = "~/scratch/eeg-transformer/lightning_logs/version_50915880/checkpoints/epoch=16-step=23562.ckpt"
+dset_name = ""
 
 if "SLURM_TMPDIR" in os.environ:
     print(f"trying to load data from {os.environ['SLURM_TMPDIR']}")
@@ -24,8 +25,12 @@ module.eval().freeze()
 model = module.model.to(device)
 
 hparams = module.hparams
-hparams.data_path = join(data_path, basename(hparams.data_path))
-hparams.label_path = join(data_path, basename(hparams.label_path))
+if len(dset_name)>0:
+    hparams.data_path = join(data_path, basename(f"raw-{dset_name}.dat"))
+    hparams.label_path = join(data_path, basename(f"label-{dset_name}.csv"))
+else:
+    hparams.data_path = join(data_path, basename(hparams.data_path))
+    hparams.label_path = join(data_path, basename(hparams.label_path))
 
 print("loading dataset")
 data = RawDataset(hparams)
