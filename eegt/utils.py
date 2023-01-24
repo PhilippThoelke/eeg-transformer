@@ -10,16 +10,18 @@ import pytorch_lightning as pl
 from eegt.dataset import RawDataset, ConcatDataset
 
 
-def load_model(path):
-    return load_lightning_module(path).model
+def load_model(path, freeze=False):
+    return load_lightning_module(path, freeze=freeze).model
 
 
-def load_lightning_module(path):
+def load_lightning_module(path, freeze=False):
     paradigm_name = torch.load(path, map_location="cpu")["hyper_parameters"][
         "training_paradigm"
     ]
     paradigm = importlib.import_module(f"eegt.modules.{paradigm_name}")
     module = paradigm.LightningModule.load_from_checkpoint(path, map_location="cpu")
+    if freeze:
+        module.freeze()
     return module
 
 
