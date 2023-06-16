@@ -1,0 +1,4 @@
+lightning
+xformers
+mne
+joblib
