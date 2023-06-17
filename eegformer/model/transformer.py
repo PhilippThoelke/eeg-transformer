@@ -18,10 +18,10 @@ class Transformer(pl.LightningModule):
         dim=320,
         n_layer=3,
         n_head=5,
-        pdropout=0.0,
+        pdropout=0.2,
         hidden_layer_multiplier=4,
         warmup_steps=100,
-        lr_decay_steps=5000,
+        lr_decay_steps=10000,
         z_transform=True,
     ):
         super().__init__()
@@ -116,6 +116,7 @@ class Transformer(pl.LightningModule):
 
         loss = F.cross_entropy(y_hat, y, weight=self.class_weights["train"])
 
+        self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         self.logger.log_metrics(
             {
                 "train_loss": loss.mean(),
