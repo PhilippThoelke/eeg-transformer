@@ -12,15 +12,15 @@ from eegformer.utils import MLP3DPositionalEmbedding
 class Transformer(pl.LightningModule):
     def __init__(
         self,
-        learning_rate=5e-4,
-        weight_decay=0.03,
+        learning_rate=1e-3,
+        weight_decay=0.0,
         num_classes=10,
         dim=320,
-        n_layer=3,
+        n_layer=5,
         n_head=5,
-        dropout=0.1,
+        dropout=0.0,
         hidden_layer_multiplier=4,
-        warmup_steps=100,
+        warmup_steps=500,
         lr_decay_steps=10000,
         z_transform=True,
     ):

@@ -37,27 +37,23 @@ class RandomAmplitudeScaleShift(BaseTransform):
     the standard deviations are additionally multiplied by the signal standard deviation.
 
     Args:
-        mean_shift (float): Mean of the random amplitude shift.
         std_shift (float): Standard deviation of the random amplitude shift.
-        mean_scale (float): Mean of the random amplitude scale.
         std_scale (float): Standard deviation of the random amplitude scale.
         channelwise (bool): Whether to apply the same scale and shift to all channels.
     """
 
-    def __init__(self, mean_shift=0.0, std_shift=0.1, mean_scale=1.0, std_scale=0.1, channelwise=True):
-        self.mean_shift = mean_shift
+    def __init__(self, std_shift=0.1, std_scale=0.1, channelwise=True):
         self.std_shift = std_shift
-        self.mean_scale = mean_scale
         self.std_scale = std_scale
         self.channelwise = channelwise
 
     def __call__(self, signal: torch.Tensor, ch_pos: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         if self.channelwise:
-            shift = torch.randn(signal.shape[0], 1) * signal.std() * self.std_shift + self.mean_shift
-            scale = torch.randn(signal.shape[0], 1) * signal.std() * self.std_scale + self.mean_scale
+            shift = torch.randn(signal.shape[0], 1) * signal.std() * self.std_shift
+            scale = torch.randn(signal.shape[0], 1) * signal.std() * self.std_scale + 1
         else:
-            shift = torch.randn(1) * signal.std() * self.std_shift + self.mean_shift
-            scale = torch.randn(1) * signal.std() * self.std_scale + self.mean_scale
+            shift = torch.randn(1) * signal.std() * self.std_shift
+            scale = torch.randn(1) * signal.std() * self.std_scale + 1
         return signal * scale + shift, ch_pos
 
 
@@ -70,7 +66,7 @@ class RandomTimeShift(BaseTransform):
         std (float): Standard deviation of the random time shift (in samples).
     """
 
-    def __init__(self, std=10.0):
+    def __init__(self, std=5.0):
         self.std = std
 
     def __call__(self, signal: torch.Tensor, ch_pos: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -85,16 +81,14 @@ class GaussianNoiseSignal(BaseTransform):
     standard deviation of the signal.
 
     Args:
-        mean (float): The mean of the Gaussian distribution.
         std (float): The standard deviation of the Gaussian distribution.
     """
 
-    def __init__(self, mean=0.0, std=0.1):
-        self.mean = mean
+    def __init__(self, std=0.1):
         self.std = std
 
     def __call__(self, signal: torch.Tensor, ch_pos: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        return signal + (torch.randn_like(signal) * signal.std() * self.std + self.mean), ch_pos
+        return signal + (torch.randn_like(signal) * signal.std() * self.std), ch_pos
 
 
 class GaussianNoiseChannelPos(BaseTransform):
@@ -103,16 +97,14 @@ class GaussianNoiseChannelPos(BaseTransform):
     the standard deviation of the channel positions.
 
     Args:
-        mean (float): The mean of the Gaussian distribution.
         std (float): The standard deviation of the Gaussian distribution.
     """
 
-    def __init__(self, mean=0.0, std=0.1):
-        self.mean = mean
+    def __init__(self, std=0.2):
         self.std = std
 
     def __call__(self, signal: torch.Tensor, ch_pos: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        return signal, ch_pos + (torch.randn_like(ch_pos) * ch_pos.std() * self.std + self.mean)
+        return signal, ch_pos + (torch.randn_like(ch_pos) * ch_pos.std() * self.std)
 
 
 class FourierNoise(BaseTransform):
@@ -120,15 +112,13 @@ class FourierNoise(BaseTransform):
     Add Fourier noise to the signal.
 
     Args:
-        mean (float): The mean of the Gaussian distribution.
         std (float): The standard deviation of the Gaussian distribution.
     """
 
-    def __init__(self, mean=0.0, std=0.1):
-        self.mean = mean
+    def __init__(self, std=0.5):
         self.std = std
 
     def __call__(self, signal: torch.Tensor, ch_pos: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         ft = torch.fft.fft(signal)
-        ft = ft + (torch.randn_like(ft) * ft.std() * self.std + self.mean)
+        ft = ft + (torch.randn_like(ft) * ft.std(dim=0, keepdims=True) * self.std)
         return torch.fft.ifft(ft).real, ch_pos
