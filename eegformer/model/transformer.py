@@ -12,13 +12,13 @@ from eegformer.utils import MLP3DPositionalEmbedding
 class Transformer(pl.LightningModule):
     def __init__(
         self,
-        learning_rate=1e-3,
-        weight_decay=0.01,
-        num_classes=2,
+        learning_rate=5e-4,
+        weight_decay=0.03,
+        num_classes=10,
         dim=320,
         n_layer=3,
         n_head=5,
-        pdropout=0.2,
+        dropout=0.1,
         hidden_layer_multiplier=4,
         warmup_steps=100,
         lr_decay_steps=10000,
@@ -39,16 +39,16 @@ class Transformer(pl.LightningModule):
                 "residual_norm_style": "pre",
                 "multi_head_config": {
                     "num_heads": n_head,
-                    "residual_dropout": pdropout,
+                    "residual_dropout": dropout,
                     "attention": {
                         "name": "scaled_dot_product",
-                        "dropout": pdropout,
+                        "dropout": dropout,
                         "causal": False,
                     },
                 },
                 "feedforward_config": {
                     "name": "MLP",
-                    "dropout": pdropout,
+                    "dropout": dropout,
                     "activation": "gelu",
                     "hidden_layer_multiplier": hidden_layer_multiplier,
                 },
