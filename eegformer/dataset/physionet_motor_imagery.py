@@ -1,6 +1,7 @@
 import os
 from enum import Flag
-from os.path import abspath, expanduser, join
+from glob import glob
+from os.path import abspath, exists, expanduser, join
 from typing import List, Union
 
 import lightning.pytorch as pl
@@ -10,7 +11,7 @@ from joblib import Parallel, delayed
 from mne.datasets import eegbci
 from tqdm import tqdm
 
-from eegformer.utils import PreprocessingConfig, preprocess
+from eegformer.utils import PreprocessingConfig, TorchEpoch, get_channel_pos, preprocess
 
 
 class PhysionetMotorImageryTask(Flag):
@@ -97,7 +98,7 @@ def parse_subjects(subjects: Union[int, str], unavailable: List[int] = []) -> Li
     return result
 
 
-def preprocess_subject(sub: int, runs: List[int], path: str, config: PreprocessingConfig) -> None:
+def preprocess_subject(sub: int, runs: List[int], path: str, config: PreprocessingConfig, force: bool = False) -> None:
     """
     Preprocess a subject. Stores the preprocessed data under `path`/processed.
 
@@ -106,15 +107,21 @@ def preprocess_subject(sub: int, runs: List[int], path: str, config: Preprocessi
         runs (List[int]): The runs to be used.
         path (str): The path to the dataset.
         config (PreprocessingConfig): The preprocessing configuration.
+        force (bool): Whether to force preprocessing even if the file already exists.
     """
-    segments = {}
     for run in runs:
+        # check if file already exists
+        processed_path = join(path, "processed", f"sub-{sub}_run-{run}.pt")
+        if not force and exists(processed_path):
+            continue
+
+        # (down)load raw data
         paths = eegbci.load_data(sub, run, path, update_path=False, verbose="ERROR")
         assert len(paths) == 1, f"Found more than one file for subject {sub} run {run}."
 
         raw = mne.io.read_raw(paths[0], verbose="ERROR", preload=True)
         eegbci.standardize(raw)
-        raw = raw.set_eeg_reference("average")  # reference to average
+        raw = raw.set_eeg_reference("average", verbose="ERROR")  # reference to average
         raw = raw.drop_channels(["T9", "T10", "Iz"])  # drop reference channels
         raw.set_montage(mne.channels.make_standard_montage("brainproducts-RNP-BA-128"))  # set montage
         raw.info["line_freq"] = 60  # set power line frequency
@@ -123,17 +130,17 @@ def preprocess_subject(sub: int, runs: List[int], path: str, config: Preprocessi
         raw = preprocess(raw, config)
 
         # crop raw according to annotations and assign labels
+        samples = []
         for annot in raw.annotations:
             raw_segment = raw.copy().crop(tmin=annot["onset"], tmax=annot["onset"] + annot["duration"])
 
+            ch_pos = get_channel_pos(raw_segment)
             label = LABEL_MAPPING[(run, annot["description"])]
-            if label in segments:
-                segments[label].append(raw_segment)
-            else:
-                segments[label] = [raw_segment]
+            raw_segment = torch.from_numpy(raw_segment.get_data()).float().T
+            samples.append(TorchEpoch(raw_segment, ch_pos, label))
 
-    # save preprocessed data
-    # TODO
+        # save preprocessed data
+        torch.save(samples, processed_path)
 
 
 class PhysionetMotorImagery(pl.LightningDataModule):
@@ -146,6 +153,7 @@ class PhysionetMotorImagery(pl.LightningDataModule):
         val_subjects (Union[int, str]): Number of subjects in validation split, or string specifying subject IDs.
         test_subjects (Union[int, str]): Number of subjects in test split, or string specifying subject IDs.
         root (str): The root directory where the dataset will be stored.
+        force_preprocessing (bool): Whether to force preprocessing even if the file already exists.
         n_jobs (int): The number of jobs for downloading and preprocessing the data.
 
     Examples:
@@ -161,6 +169,7 @@ class PhysionetMotorImagery(pl.LightningDataModule):
         val_subjects: Union[int, str] = 20,
         test_subjects: Union[int, str] = 9,
         root: str = "data",
+        force_preprocessing: bool = False,
         n_jobs: int = -1,
     ):
         super().__init__()
@@ -172,6 +181,7 @@ class PhysionetMotorImagery(pl.LightningDataModule):
         self.test_subjects = parse_subjects(test_subjects, unavailable=self.train_subjects + self.val_subjects)
 
         self.root = join(abspath(expanduser(root)), "physionet-motor-imagery")
+        self.force_preprocessing = force_preprocessing
         self.n_jobs = n_jobs
 
     def prepare_data(self):
@@ -196,8 +206,8 @@ class PhysionetMotorImagery(pl.LightningDataModule):
 
         # download and preprocess the dataset and store it under self.root/processed
         Parallel(n_jobs=self.n_jobs)(
-            delayed(preprocess_subject)(sub, runs, self.root, self.preprocessing_config)
-            for sub in tqdm(self.train_subjects + self.val_subjects + self.test_subjects, desc="Preprocessing")
+            delayed(preprocess_subject)(sub, runs, self.root, self.preprocessing_config, force=self.force_preprocessing)
+            for sub in tqdm(self.train_subjects + self.val_subjects + self.test_subjects, desc="Checking data")
         )
 
 
@@ -209,6 +219,5 @@ if __name__ == "__main__":
         val_subjects="3",
         test_subjects="4",
         root="~/data",
-        n_jobs=1,
     )
     data.prepare_data()
