@@ -49,7 +49,7 @@ class TorchEpoch:
         label str: The class label of the data.
     """
 
-    def __init__(self, signal: torch.Tensor, ch_pos: torch.Tensor, sfreq: float, label: torch.Tensor):
+    def __init__(self, signal: torch.Tensor, ch_pos: torch.Tensor, sfreq: float, label: str):
         self.signal = signal
         self.ch_pos = ch_pos
         self.sfreq = sfreq
@@ -97,7 +97,7 @@ def preprocess(raw: Raw, config: PreprocessingConfig) -> Raw:
         raw = raw.filter(config.low_pass, config.high_pass, verbose="ERROR")
 
     # resample
-    if config.resample is not None:
+    if config.resample is not None and raw.info["sfreq"] != config.resample:
         raw = raw.resample(config.resample, verbose="ERROR")
 
     # return preprocessed raw
