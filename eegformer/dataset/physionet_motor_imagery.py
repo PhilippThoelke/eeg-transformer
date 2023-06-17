@@ -30,6 +30,21 @@ class PhysionetMotorImageryTask(Flag):
         | MOTOR_IMAGERY_HANDS_FEET
     )
 
+    @staticmethod
+    def get_runs(task) -> List[int]:
+        runs = []
+        if (task & PhysionetMotorImageryTask.BASELINE).value > 0:
+            runs += [1, 2]
+        if (task & PhysionetMotorImageryTask.MOTOR_EXECUTION_LEFT_RIGHT).value > 0:
+            runs += [3, 7, 11]
+        if (task & PhysionetMotorImageryTask.MOTOR_EXECUTION_HANDS_FEET).value > 0:
+            runs += [5, 9, 13]
+        if (task & PhysionetMotorImageryTask.MOTOR_IMAGERY_LEFT_RIGHT).value > 0:
+            runs += [4, 8, 12]
+        if (task & PhysionetMotorImageryTask.MOTOR_IMAGERY_HANDS_FEET).value > 0:
+            runs += [6, 10, 14]
+        return runs
+
 
 # maps (run, annot) to a string label
 LABEL_MAPPING = {
@@ -202,7 +217,7 @@ class PhysionetMotorImageryDataset(Dataset):
     def __getitem__(self, idx):
         processed_file, sample_idx, start_idx = self.sample_index[idx]
         sample = torch.load(processed_file)[sample_idx]
-        signal = sample.signal[:,start_idx : start_idx + int(self.epoch_length * sample.sfreq)]
+        signal = sample.signal[:, start_idx : start_idx + int(self.epoch_length * sample.sfreq)]
         return signal, sample.ch_pos, self.label_to_idx[sample.label]
 
 
@@ -238,7 +253,7 @@ class PhysionetMotorImagery(pl.LightningDataModule):
         test_subjects: Union[int, str] = 9,
         epoch_length: float = 2.0,
         epoch_overlap: float = 0.5,
-        batch_size: int = 32,
+        batch_size: int = 512,
         num_workers: int = 8,
         root: str = "data",
         force_preprocessing: bool = False,
@@ -266,23 +281,13 @@ class PhysionetMotorImagery(pl.LightningDataModule):
         """
         Download the dataset, preprocess it, extract epochs and save them to `self.root`/processed.
         """
-        # collect run IDs
-        runs = []
-        if (self.task & PhysionetMotorImageryTask.BASELINE).value > 0:
-            runs += [1, 2]
-        if (self.task & PhysionetMotorImageryTask.MOTOR_EXECUTION_LEFT_RIGHT).value > 0:
-            runs += [3, 7, 11]
-        if (self.task & PhysionetMotorImageryTask.MOTOR_EXECUTION_HANDS_FEET).value > 0:
-            runs += [5, 9, 13]
-        if (self.task & PhysionetMotorImageryTask.MOTOR_IMAGERY_LEFT_RIGHT).value > 0:
-            runs += [4, 8, 12]
-        if (self.task & PhysionetMotorImageryTask.MOTOR_IMAGERY_HANDS_FEET).value > 0:
-            runs += [6, 10, 14]
-
-        # create final directory
+        # create results directory
         os.makedirs(join(self.root, "processed"), exist_ok=True)
 
-        # download and preprocess the dataset and store it under self.root/processed
+        # collect run IDs for the current task
+        runs = PhysionetMotorImageryTask.get_runs(self.task)
+
+        # download and preprocess the dataset and store it under `self.root`/processed
         Parallel(n_jobs=self.n_jobs)(
             delayed(preprocess_subject)(sub, runs, self.root, self.preprocessing_config, force=self.force_preprocessing)
             for sub in tqdm(self.train_subjects + self.val_subjects + self.test_subjects, desc="Checking data")
@@ -292,17 +297,20 @@ class PhysionetMotorImagery(pl.LightningDataModule):
         """
         Load the dataset from `self.root`/processed.
         """
+        # collect run IDs for the current task
+        runs = PhysionetMotorImageryTask.get_runs(self.task)
+
         if stage == "fit":
-            train_files = self.list_processed_files("train")
-            val_files = self.list_processed_files("val")
-            test_files = self.list_processed_files("test")
+            train_files = self.list_processed_files(self.train_subjects, runs)
+            val_files = self.list_processed_files(self.val_subjects, runs)
+            test_files = self.list_processed_files(self.test_subjects, runs)
 
             self.train_data = PhysionetMotorImageryDataset(train_files, self.epoch_length, self.epoch_overlap)
             self.val_data = PhysionetMotorImageryDataset(val_files, self.epoch_length, self.epoch_overlap)
             self.test_data = PhysionetMotorImageryDataset(test_files, self.epoch_length, self.epoch_overlap)
 
         if stage == "tes%t":
-            test_files = self.list_processed_files("test")
+            test_files = self.list_processed_files(self.test_subjects, runs)
             self.test_data = PhysionetMotorImageryDataset(test_files, self.epoch_length, self.epoch_overlap)
 
     def train_dataloader(self) -> DataLoader:
@@ -339,28 +347,27 @@ class PhysionetMotorImagery(pl.LightningDataModule):
             pin_memory=True,
         )
 
-    def list_processed_files(self, stage: str) -> List[str]:
+    def list_processed_files(self, subjects: List[int] = None, runs: List[int] = None) -> List[str]:
         """
-        List all processed files for the given stage.
+        List all processed files for the given subjects and runs.
 
         Args:
-            stage (str): The stage to list files for. Must be one of "train", "val" or "test".
+            subjects (List[int], optional): List of subjects to include. Defaults to all subjects.
+            runs (List[int], optional): List of runs to include. Defaults to all runs.
 
         Returns:
             List[str]: A list of file paths.
         """
-        if stage.lower() == "train":
-            subj_list = self.train_subjects
-        elif stage.lower() == "val":
-            subj_list = self.val_subjects
-        elif stage.lower() == "test":
-            subj_list = self.test_subjects
-        else:
-            raise ValueError(f"Unknown stage {stage}")
-
-        fnames = glob(join(self.root, "processed", "*.pt"))
-        filter_fn = lambda p: int(basename(p).split("_")[0].split("-")[1]) in subj_list
-        return list(filter(filter_fn, fnames))
+        paths = []
+        for path in glob(join(self.root, "processed", "*.pt")):
+            sub, run = basename(path).split(".")[0].split("_")
+            sub, run = int(sub.split("-")[1]), int(run.split("-")[1])
+            if subjects is not None and sub not in subjects:
+                continue
+            if runs is not None and run not in runs:
+                continue
+            paths.append(path)
+        return paths
 
 
 if __name__ == "__main__":
