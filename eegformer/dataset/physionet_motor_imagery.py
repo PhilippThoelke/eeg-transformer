@@ -1,14 +1,16 @@
 import os
 from enum import Flag
 from glob import glob
-from os.path import abspath, exists, expanduser, join
+from os.path import abspath, basename, exists, expanduser, join
 from typing import List, Union
 
 import lightning.pytorch as pl
 import mne
+import numpy as np
 import torch
 from joblib import Parallel, delayed
 from mne.datasets import eegbci
+from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 from eegformer.utils import PreprocessingConfig, TorchEpoch, get_channel_pos, preprocess
@@ -84,7 +86,7 @@ def parse_subjects(subjects: Union[int, str], unavailable: List[int] = []) -> Li
     # return the chosen list of subjects if subjects is a string
     if "," in subjects:
         # recursively parse subjects
-        return sum([parse_subjects(s) for s in subjects.split(",")], [])
+        return sum([parse_subjects(s) for s in subjects.split(",") if len(s.strip()) > 0], [])
 
     if "-" in subjects:
         start, end = subjects.split("-")
@@ -132,15 +134,76 @@ def preprocess_subject(sub: int, runs: List[int], path: str, config: Preprocessi
         # crop raw according to annotations and assign labels
         samples = []
         for annot in raw.annotations:
-            raw_segment = raw.copy().crop(tmin=annot["onset"], tmax=annot["onset"] + annot["duration"])
+            label_key = (run, annot["description"])
 
+            # skip annotations that are not in the label mapping
+            if label_key not in LABEL_MAPPING:
+                continue
+
+            # crop raw to annotation
+            tmax = min(annot["onset"] + annot["duration"], raw.tmax)
+            raw_segment = raw.copy().crop(tmin=annot["onset"], tmax=tmax)
+
+            # assemble sample
             ch_pos = get_channel_pos(raw_segment)
-            label = LABEL_MAPPING[(run, annot["description"])]
-            raw_segment = torch.from_numpy(raw_segment.get_data()).float().T
-            samples.append(TorchEpoch(raw_segment, ch_pos, label))
+            sfreq = raw_segment.info["sfreq"]
+            label = LABEL_MAPPING[label_key]
+            raw_segment = torch.from_numpy(raw_segment.get_data()).float()
+            samples.append(TorchEpoch(raw_segment, ch_pos, sfreq, label))
 
         # save preprocessed data
         torch.save(samples, processed_path)
+
+
+class PhysionetMotorImageryDataset(Dataset):
+    def __init__(self, processed_files: List[str], epoch_length: float, overlap: float):
+        """
+        Args:
+            processed_files (List[str]): List of paths to preprocessed files.
+            epoch_length (float): Length of epoch in seconds.
+            overlap (float): Overlap between epochs in seconds.
+        """
+        self.processed_files = processed_files
+        self.epoch_length = epoch_length
+        self.overlap = overlap
+        self.sample_index = []
+
+        # index the data
+        labels = []
+        for processed_file in self.processed_files:
+            samples = torch.load(processed_file)
+            if len(samples) == 0:
+                pl.utilities.rank_zero_warn(f"File {processed_file} contains no samples.")
+
+            # add all possible epochs to the index
+            for i, sample in enumerate(samples):
+                duration = sample.signal.shape[1] / sample.sfreq
+                num_epochs = int((duration - self.epoch_length) / (self.epoch_length - self.overlap)) + 1
+                # compute epoch start times
+                start_idxs = (np.arange(num_epochs) * (self.epoch_length - self.overlap) * sample.sfreq).astype(int)
+                # add to index
+                self.sample_index.extend(
+                    list(
+                        zip(
+                            [processed_file] * num_epochs,  # epoch file path
+                            [i] * num_epochs,  # sample index
+                            start_idxs,  # epoch start time
+                        )
+                    )
+                )
+                labels.append(sample.label)
+
+        # create label mapping
+        self.label_to_idx = {label: idx for idx, label in enumerate(sorted(set(labels)))}
+
+    def __len__(self):
+        return len(self.sample_index)
+
+    def __getitem__(self, idx):
+        processed_file, sample_idx, start_idx = self.sample_index[idx]
+        sample = torch.load(processed_file)[sample_idx]
+        signal = sample.signal[:,start_idx : start_idx + int(self.epoch_length * sample.sfreq)]
+        return signal, sample.ch_pos, self.label_to_idx[sample.label]
 
 
 class PhysionetMotorImagery(pl.LightningDataModule):
@@ -149,9 +212,14 @@ class PhysionetMotorImagery(pl.LightningDataModule):
 
     Args:
         task (PhysionetMotorImageryTask): The task to be used in the dataset.
+        preprocessing_config (PreprocessingConfig): The preprocessing configuration.
         train_subjects (Union[int, str]): Number of subjects in training split, or string specifying subject IDs.
         val_subjects (Union[int, str]): Number of subjects in validation split, or string specifying subject IDs.
         test_subjects (Union[int, str]): Number of subjects in test split, or string specifying subject IDs.
+        epoch_length (float): Length of epoch in seconds.
+        epoch_overlap (float): Overlap between epochs in seconds.
+        batch_size (int): The batch size.
+        num_workers (int): The number of workers for loading the data.
         root (str): The root directory where the dataset will be stored.
         force_preprocessing (bool): Whether to force preprocessing even if the file already exists.
         n_jobs (int): The number of jobs for downloading and preprocessing the data.
@@ -168,11 +236,17 @@ class PhysionetMotorImagery(pl.LightningDataModule):
         train_subjects: Union[int, str] = 80,
         val_subjects: Union[int, str] = 20,
         test_subjects: Union[int, str] = 9,
+        epoch_length: float = 2.0,
+        epoch_overlap: float = 0.5,
+        batch_size: int = 32,
+        num_workers: int = 0,
         root: str = "data",
         force_preprocessing: bool = False,
         n_jobs: int = -1,
     ):
         super().__init__()
+        self.save_hyperparameters()
+
         self.task = task
         self.preprocessing_config = preprocessing_config
 
@@ -180,6 +254,10 @@ class PhysionetMotorImagery(pl.LightningDataModule):
         self.val_subjects = parse_subjects(val_subjects, unavailable=self.train_subjects)
         self.test_subjects = parse_subjects(test_subjects, unavailable=self.train_subjects + self.val_subjects)
 
+        self.epoch_length = epoch_length
+        self.epoch_overlap = epoch_overlap
+        self.batch_size = batch_size
+        self.num_workers = num_workers
         self.root = join(abspath(expanduser(root)), "physionet-motor-imagery")
         self.force_preprocessing = force_preprocessing
         self.n_jobs = n_jobs
@@ -210,6 +288,80 @@ class PhysionetMotorImagery(pl.LightningDataModule):
             for sub in tqdm(self.train_subjects + self.val_subjects + self.test_subjects, desc="Checking data")
         )
 
+    def setup(self, stage: str):
+        """
+        Load the dataset from `self.root`/processed.
+        """
+        if stage == "fit":
+            train_files = self.list_processed_files("train")
+            val_files = self.list_processed_files("val")
+            test_files = self.list_processed_files("test")
+
+            self.train_data = PhysionetMotorImageryDataset(train_files, self.epoch_length, self.epoch_overlap)
+            self.val_data = PhysionetMotorImageryDataset(val_files, self.epoch_length, self.epoch_overlap)
+            self.test_data = PhysionetMotorImageryDataset(test_files, self.epoch_length, self.epoch_overlap)
+
+        if stage == "tes%t":
+            test_files = self.list_processed_files("test")
+            self.test_data = PhysionetMotorImageryDataset(test_files, self.epoch_length, self.epoch_overlap)
+
+    def train_dataloader(self) -> DataLoader:
+        """
+        Return the training dataloader.
+        """
+        return DataLoader(
+            self.train_data,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=self.num_workers,
+            pin_memory=True,
+        )
+
+    def val_dataloader(self) -> DataLoader:
+        """
+        Return the training dataloader.
+        """
+        return DataLoader(
+            self.val_data,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            pin_memory=True,
+        )
+
+    def test_dataloader(self) -> DataLoader:
+        """
+        Return the training dataloader.
+        """
+        return DataLoader(
+            self.test_data,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            pin_memory=True,
+        )
+
+    def list_processed_files(self, stage: str) -> List[str]:
+        """
+        List all processed files for the given stage.
+
+        Args:
+            stage (str): The stage to list files for. Must be one of "train", "val" or "test".
+
+        Returns:
+            List[str]: A list of file paths.
+        """
+        if stage.lower() == "train":
+            subj_list = self.train_subjects
+        elif stage.lower() == "val":
+            subj_list = self.val_subjects
+        elif stage.lower() == "test":
+            subj_list = self.test_subjects
+        else:
+            raise ValueError(f"Unknown stage {stage}")
+
+        fnames = glob(join(self.root, "processed", "*.pt"))
+        filter_fn = lambda p: int(basename(p).split("_")[0].split("-")[1]) in subj_list
+        return list(filter(filter_fn, fnames))
+
 
 if __name__ == "__main__":
     pl.seed_everything(42)
@@ -218,6 +370,8 @@ if __name__ == "__main__":
         train_subjects="1-2",
         val_subjects="3",
         test_subjects="4",
+        force_preprocessing=True,
         root="~/data",
     )
     data.prepare_data()
+    data.setup("fit")

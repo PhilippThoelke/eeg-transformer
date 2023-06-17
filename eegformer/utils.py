@@ -1,7 +1,47 @@
 import mne
 import numpy as np
 import torch
+import torch.nn as nn
 from mne.io import Raw
+from xformers.components.positional_embedding import (
+    PositionEmbedding,
+    PositionEmbeddingConfig,
+    register_positional_embedding,
+)
+
+
+@register_positional_embedding("mlp-3d", PositionEmbeddingConfig)
+class MLP3DPositionalEmbedding(PositionEmbedding):
+    """
+    MLP positional embedding for 3D data.
+
+    Args:
+        dim_model (int): The dimensionality of the model.
+        add_class_token (bool): Whether to add a class token.
+    """
+
+    def __init__(self, dim_model: int, add_class_token: bool = False, *_, **__):
+        super().__init__()
+        self.dim_model = dim_model
+        self.mlp = nn.Sequential(
+            nn.Linear(3, dim_model // 2),
+            nn.ReLU(),
+            nn.Linear(dim_model // 2, dim_model),
+        )
+        self.class_token = torch.nn.Parameter(torch.zeros(dim_model)) if add_class_token else None
+
+    def forward(self, x: torch.Tensor, ch_pos: torch.Tensor) -> torch.Tensor:
+        """
+        Embed the channel positions and optionally prepend a class token to the channel dimension.
+        """
+        # embed the channel positions
+        out = x + self.mlp(ch_pos)
+
+        # prepend class token
+        if self.class_token is not None:
+            clf_token = torch.ones(out.shape[0], 1, out.shape[-1], device=out.device) * self.class_token
+            out = torch.cat([clf_token, out], dim=1)
+        return out
 
 
 class TorchEpoch:
@@ -9,22 +49,37 @@ class TorchEpoch:
     An epoch with a single label. Contains the raw signal, the channel positions and the label.
 
     Args:
-        signal (torch.Tensor): The raw signal with shape (time, channels).
+        signal (torch.Tensor): The raw signal with shape (channels, time).
         ch_pos (torch.Tensor): The channel positions with shape (channels, 3).
+        sfreq (float): The sampling frequency of the signal.
         label str: The class label of the data.
     """
 
-    def __init__(self, signal: torch.Tensor, ch_pos: torch.Tensor, label: torch.Tensor):
+    def __init__(self, signal: torch.Tensor, ch_pos: torch.Tensor, sfreq: float, label: torch.Tensor):
         self.signal = signal
         self.ch_pos = ch_pos
+        self.sfreq = sfreq
         self.label = label
 
 
 class PreprocessingConfig:
-    def __init__(self, notch_filter: bool = True, low_pass: float = None, high_pass: float = None) -> None:
+    """
+    The configuration for the preprocessing.
+
+    Args:
+        notch_filter (bool): Whether to apply a notch filter.
+        low_pass (float): The low pass frequency.
+        high_pass (float): The high pass frequency.
+        resample (float): Frequency to resample to.
+    """
+
+    def __init__(
+        self, notch_filter: bool = True, low_pass: float = None, high_pass: float = None, resample: float = None
+    ) -> None:
         self.notch_filter = notch_filter
         self.low_pass = low_pass
         self.high_pass = high_pass
+        self.resample = resample
 
 
 def preprocess(raw: Raw, config: PreprocessingConfig) -> Raw:
@@ -46,6 +101,10 @@ def preprocess(raw: Raw, config: PreprocessingConfig) -> Raw:
     # apply band pass filter
     if config.low_pass is not None or config.high_pass is not None:
         raw = raw.filter(config.low_pass, config.high_pass, verbose="ERROR")
+
+    # resample
+    if config.resample is not None:
+        raw = raw.resample(config.resample, verbose="ERROR")
 
     # return preprocessed raw
     return raw

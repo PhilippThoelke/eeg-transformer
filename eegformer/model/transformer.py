@@ -11,22 +11,19 @@ from xformers.factory import xFormer, xFormerConfig
 class Transformer(pl.LightningModule):
     def __init__(
         self,
-        steps,
         learning_rate=5e-4,
         weight_decay=0.03,
         num_classes=10,
-        patch_size=2,
-        dim=384,
-        n_layer=6,
-        n_head=6,
-        resid_pdrop=0.0,
-        attn_pdrop=0.0,
-        mlp_pdrop=0.0,
+        dim=320,
+        n_layer=3,
+        n_head=5,
+        pdropout=0.0,
         hidden_layer_multiplier=4,
+        warmup_steps=100,
+        lr_decay_steps=10000,
     ):
         super().__init__()
         self.save_hyperparameters()
-        num_patches = (image_size // patch_size) ** 2
 
         xformer_config = [
             {
@@ -36,30 +33,23 @@ class Transformer(pl.LightningModule):
                 "residual_norm_style": "pre",
                 "multi_head_config": {
                     "num_heads": n_head,
-                    "residual_dropout": resid_pdrop,
+                    "residual_dropout": pdropout,
                     "attention": {
                         "name": "scaled_dot_product",
-                        "dropout": attn_pdrop,
+                        "dropout": pdropout,
                         "causal": False,
                     },
                 },
                 "feedforward_config": {
                     "name": "FusedMLP",
-                    "dropout": mlp_pdrop,
+                    "dropout": pdropout,
                     "activation": "gelu",
                     "hidden_layer_multiplier": hidden_layer_multiplier,
                 },
                 "position_encoding_config": {
-                    "name": "learnable",
-                    "seq_len": num_patches,
+                    "name": "mlp-3d",
                     "dim_model": dim,
                     "add_class_token": True,
-                },
-                "patch_embedding_config": {
-                    "in_channels": 3,
-                    "out_channels": dim,
-                    "kernel_size": patch_size,
-                    "stride": patch_size,
                 },
             }
         ]
@@ -72,49 +62,46 @@ class Transformer(pl.LightningModule):
         self.ln = nn.LayerNorm(dim)
         self.head = nn.Linear(dim, num_classes)
         self.criterion = torch.nn.CrossEntropyLoss()
-        self.val_accuracy = Accuracy()
+        self.val_accuracy = Accuracy("binary")
 
     @staticmethod
     def linear_warmup_cosine_decay(warmup_steps, total_steps):
         """
         Linear warmup for warmup_steps, with cosine annealing to 0 at total_steps
         """
+
         def fn(step):
             if step < warmup_steps:
                 return float(step) / float(max(1, warmup_steps))
 
-            progress = float(step - warmup_steps) / float(
-                max(1, total_steps - warmup_steps)
-            )
+            progress = float(step - warmup_steps) / float(max(1, total_steps - warmup_steps))
             return 0.5 * (1.0 + math.cos(math.pi * progress))
+
         return fn
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(
             self.parameters(),
             lr=self.hparams.learning_rate,
-            betas=self.hparams.betas,
             weight_decay=self.hparams.weight_decay,
         )
-
-        warmup_steps = int(self.hparams.linear_warmup_ratio * self.hparams.steps)
 
         scheduler = {
             "scheduler": torch.optim.lr_scheduler.LambdaLR(
                 optimizer,
-                self.linear_warmup_cosine_decay(warmup_steps, self.hparams.steps),
+                self.linear_warmup_cosine_decay(self.hparams.warmup_steps, self.hparams.lr_decay_steps),
             ),
             "interval": "step",
         }
 
         return [optimizer], [scheduler]
 
-    def forward(self, x):
-        x = self.model(x)
+    def forward(self, x, ch_pos):
+        x = self.model(x, ch_pos)
         x = self.ln(x)
 
         # extract the class token
-        x = x[:, 0]  
+        x = x[:, 0]
 
         x = self.head(x)
         return x
@@ -135,8 +122,8 @@ class Transformer(pl.LightningModule):
         return loss
 
     def evaluate(self, batch, stage=None):
-        x, y = batch
-        y_hat = self(x)
+        signal, ch_pos, y = batch
+        y_hat = self(signal, ch_pos)
         loss = self.criterion(y_hat, y)
         acc = self.val_accuracy(y_hat, y)
 
