@@ -12,8 +12,8 @@ from eegformer.utils import MLP3DPositionalEmbedding
 class Transformer(pl.LightningModule):
     def __init__(
         self,
-        learning_rate=5e-4,
-        weight_decay=0.03,
+        learning_rate=1e-3,
+        weight_decay=0.01,
         num_classes=10,
         dim=320,
         n_layer=3,
@@ -21,7 +21,8 @@ class Transformer(pl.LightningModule):
         pdropout=0.0,
         hidden_layer_multiplier=4,
         warmup_steps=100,
-        lr_decay_steps=10000,
+        lr_decay_steps=5000,
+        z_transform=True,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -94,6 +95,9 @@ class Transformer(pl.LightningModule):
         return [optimizer], [scheduler]
 
     def forward(self, x, ch_pos):
+        if self.hparams.z_transform:
+            x = (x - x.mean(dim=-1, keepdims=True)) / (x.std(dim=-1, keepdims=True) + 1e-8)
+
         x = self.pos_embed(x, ch_pos)
         x = self.model(x)
 
