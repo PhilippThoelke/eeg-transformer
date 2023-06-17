@@ -110,32 +110,23 @@ class Transformer(pl.LightningModule):
         x = self.head(x)
         return x
 
-    def training_step(self, batch, _):
-        signal, ch_pos, y = batch
-        y_hat = self(signal, ch_pos)
-
-        loss = F.cross_entropy(y_hat, y, weight=self.class_weights["train"])
-
-        self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-        self.logger.log_metrics(
-            {
-                "train_loss": loss.mean(),
-                "learning_rate": self.lr_schedulers().get_last_lr()[0],
-            },
-            step=self.global_step,
-        )
-        return loss
-
     def evaluate(self, batch, stage=None):
         signal, ch_pos, y = batch
         y_hat = self(signal, ch_pos)
 
         loss = F.cross_entropy(y_hat, y, weight=self.class_weights[stage])
-        acc = (y_hat.argmax(dim=-1) == y).float().mean()
 
         if stage:
-            self.log(f"{stage}_loss", loss, prog_bar=True)
-            self.log(f"{stage}_acc", acc, prog_bar=True)
+            acc = (y_hat.argmax(dim=-1) == y).float().mean()
+
+            self.log(f"{stage}/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+            self.log(f"{stage}/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
+        if stage == "train":
+            self.log("learning_rate", self.lr_schedulers().get_last_lr()[0], on_step=False, on_epoch=True)
+        return loss
+
+    def training_step(self, batch, _):
+        return self.evaluate(batch, "train")
 
     def validation_step(self, batch, _):
         self.evaluate(batch, "val")
