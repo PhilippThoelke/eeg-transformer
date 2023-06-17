@@ -3,3 +3,4 @@ xformers
 mne
 joblib
 scikit-learn
+wandb

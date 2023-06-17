@@ -139,3 +139,9 @@ data/
 
 # VS code dir
 .vscode/
+
+# Weights and Biases dir
+wandb/
+
+# project dir
+MotorMovementImagery/

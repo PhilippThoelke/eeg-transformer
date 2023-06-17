@@ -1,0 +1,24 @@
+trainer:
+  precision: 16-mixed
+  logger:
+    class_path: lightning.pytorch.loggers.WandbLogger
+    init_args:
+      project: MotorMovementImagery
+  max_epochs: -1
+model:
+  learning_rate: 1e-3
+  weight_decay: 0.0
+  num_classes: 10
+  dim: 320
+  n_layer: 5
+  n_head: 5
+  dropout: 0.0
+  hidden_layer_multiplier: 4
+  warmup_steps: 500
+  lr_decay_steps: 10000
+data:
+  task: ALL
+  batch_size: 512
+  n_augment: 2
+  num_workers: 16
+  root: ~/data
