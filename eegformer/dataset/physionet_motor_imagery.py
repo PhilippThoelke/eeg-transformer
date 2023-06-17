@@ -2,7 +2,7 @@ import os
 from enum import Flag
 from glob import glob
 from os.path import abspath, basename, exists, expanduser, join
-from typing import List, Union
+from typing import Callable, List, Optional, Union
 
 import lightning.pytorch as pl
 import mne
@@ -14,6 +14,7 @@ from sklearn.utils.class_weight import compute_class_weight
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
+from eegformer import augmentation
 from eegformer.utils import PreprocessingConfig, TorchEpoch, get_channel_pos, preprocess
 
 
@@ -172,21 +173,26 @@ def preprocess_subject(sub: int, runs: List[int], path: str, config: Preprocessi
 
 
 class PhysionetMotorImageryDataset(Dataset):
-    def __init__(self, processed_files: List[str], epoch_length: float, overlap: float):
+    def __init__(
+        self, processed_files: List[str], epoch_length: float, overlap: float, transform: Optional[Callable] = None
+    ):
         """
         Args:
             processed_files (List[str]): List of paths to preprocessed files.
             epoch_length (float): Length of epoch in seconds.
             overlap (float): Overlap between epochs in seconds.
+            transform (Optional[Callable]): Optional transform to be applied to the data.
         """
         self.processed_files = processed_files
         self.epoch_length = epoch_length
         self.overlap = overlap
-        self.sample_index = []
+        self.transform = transform
 
-        # index the data
+        self.sample_index = []
         labels = []
         class_distribution = {}
+
+        # index the data
         for processed_file in self.processed_files:
             samples = torch.load(processed_file)
             if len(samples) == 0:
@@ -233,7 +239,11 @@ class PhysionetMotorImageryDataset(Dataset):
         processed_file, sample_idx, start_idx = self.sample_index[idx]
         sample = torch.load(processed_file)[sample_idx]
         signal = sample.signal[:, start_idx : start_idx + int(self.epoch_length * sample.sfreq)]
-        return signal, sample.ch_pos, self.label_to_idx[sample.label]
+        ch_pos = sample.ch_pos
+
+        if self.transform is not None:
+            signal, ch_pos = self.transform(signal, ch_pos)
+        return signal, ch_pos, self.label_to_idx[sample.label]
 
 
 class PhysionetMotorImagery(pl.LightningDataModule):
@@ -249,6 +259,7 @@ class PhysionetMotorImagery(pl.LightningDataModule):
         epoch_length (float): Length of epoch in seconds.
         epoch_overlap (float): Overlap between epochs in seconds.
         batch_size (int): The batch size.
+        n_augment (int): The number of augmentations to apply to each sample. Set to 0 to apply all augmentations.
         num_workers (int): The number of workers for loading the data.
         root (str): The root directory where the dataset will be stored.
         force_preprocessing (bool): Whether to force preprocessing even if the file already exists.
@@ -269,6 +280,7 @@ class PhysionetMotorImagery(pl.LightningDataModule):
         epoch_length: float = 2.0,
         epoch_overlap: float = 0.5,
         batch_size: int = 512,
+        n_augment: int = 2,
         num_workers: int = 16,
         root: str = "data",
         force_preprocessing: bool = False,
@@ -287,6 +299,7 @@ class PhysionetMotorImagery(pl.LightningDataModule):
         self.epoch_length = epoch_length
         self.epoch_overlap = epoch_overlap
         self.batch_size = batch_size
+        self.n_augment = n_augment
         self.num_workers = num_workers
         self.root = join(abspath(expanduser(root)), "physionet-motor-imagery")
         self.force_preprocessing = force_preprocessing
@@ -333,7 +346,23 @@ class PhysionetMotorImagery(pl.LightningDataModule):
             val_files = self.list_processed_files(self.val_subjects, runs)
             test_files = self.list_processed_files(self.test_subjects, runs)
 
-            self.train_data = PhysionetMotorImageryDataset(train_files, self.epoch_length, self.epoch_overlap)
+            if self.n_augment > 0:
+                data_augmentation = augmentation.Compose(
+                    [
+                        augmentation.RandomAmplitudeScaleShift(),
+                        augmentation.RandomTimeShift(),
+                        augmentation.GaussianNoiseSignal(),
+                        augmentation.GaussianNoiseChannelPos(),
+                        augmentation.FourierNoise(),
+                    ],
+                    max_transforms=self.n_augment,
+                )
+            else:
+                data_augmentation = None
+
+            self.train_data = PhysionetMotorImageryDataset(
+                train_files, self.epoch_length, self.epoch_overlap, transform=data_augmentation
+            )
             self.val_data = PhysionetMotorImageryDataset(val_files, self.epoch_length, self.epoch_overlap)
             self.test_data = PhysionetMotorImageryDataset(test_files, self.epoch_length, self.epoch_overlap)
         elif stage == "val":
