@@ -14,7 +14,7 @@ class Transformer(pl.LightningModule):
         self,
         learning_rate=1e-3,
         weight_decay=0.01,
-        num_classes=10,
+        num_classes=2,
         dim=320,
         n_layer=3,
         n_head=5,
@@ -54,13 +54,15 @@ class Transformer(pl.LightningModule):
                 },
             }
         ]
-
         config = xFormerConfig(xformer_config)
         self.model = xFormer.from_config(config)
 
         # classifier head
         self.ln = nn.LayerNorm(dim)
         self.head = nn.Linear(dim, num_classes)
+
+        # initialize class weights
+        self.class_weights = {}
 
     @staticmethod
     def linear_warmup_cosine_decay(warmup_steps, total_steps):
@@ -112,7 +114,7 @@ class Transformer(pl.LightningModule):
         signal, ch_pos, y = batch
         y_hat = self(signal, ch_pos)
 
-        loss = F.cross_entropy(y_hat, y)
+        loss = F.cross_entropy(y_hat, y, weight=self.class_weights["train"])
 
         self.logger.log_metrics(
             {
@@ -127,7 +129,7 @@ class Transformer(pl.LightningModule):
         signal, ch_pos, y = batch
         y_hat = self(signal, ch_pos)
 
-        loss = F.cross_entropy(y_hat, y)
+        loss = F.cross_entropy(y_hat, y, weight=self.class_weights[stage])
         acc = (y_hat.argmax(dim=-1) == y).float().mean()
 
         if stage:
@@ -139,3 +141,15 @@ class Transformer(pl.LightningModule):
 
     def test_step(self, batch, _):
         self.evaluate(batch, "test")
+
+    def on_train_start(self):
+        if "train" not in self.class_weights:
+            self.class_weights["train"] = self.trainer.datamodule.class_weights("train").to(self.device)
+
+    def on_validation_start(self):
+        if "val" not in self.class_weights:
+            self.class_weights["val"] = self.trainer.datamodule.class_weights("val").to(self.device)
+
+    def on_test_start(self):
+        if "test" not in self.class_weights:
+            self.class_weights["test"] = self.trainer.datamodule.class_weights("test").to(self.device)

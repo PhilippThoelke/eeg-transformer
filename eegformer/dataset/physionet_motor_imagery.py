@@ -10,6 +10,7 @@ import numpy as np
 import torch
 from joblib import Parallel, delayed
 from mne.datasets import eegbci
+from sklearn.utils.class_weight import compute_class_weight
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
@@ -185,6 +186,7 @@ class PhysionetMotorImageryDataset(Dataset):
 
         # index the data
         labels = []
+        class_distribution = {}
         for processed_file in self.processed_files:
             samples = torch.load(processed_file)
             if len(samples) == 0:
@@ -206,10 +208,23 @@ class PhysionetMotorImageryDataset(Dataset):
                         )
                     )
                 )
-                labels.append(sample.label)
+                labels.extend([sample.label] * num_epochs)
+                # update class distribution
+                if sample.label not in class_distribution:
+                    class_distribution[sample.label] = num_epochs
+                else:
+                    class_distribution[sample.label] += num_epochs
 
         # create label mapping
         self.label_to_idx = {label: idx for idx, label in enumerate(sorted(set(labels)))}
+
+        # compute class weights
+        class_weights = compute_class_weight("balanced", classes=np.unique(labels), y=labels)
+        self._class_weights = torch.from_numpy(class_weights).float()
+
+    @property
+    def class_weights(self):
+        return self._class_weights
 
     def __len__(self):
         return len(self.sample_index)
@@ -293,6 +308,19 @@ class PhysionetMotorImagery(pl.LightningDataModule):
             for sub in tqdm(self.train_subjects + self.val_subjects + self.test_subjects, desc="Checking data")
         )
 
+    def class_weights(self, stage: str):
+        """
+        Return the class weights for the given stage.
+        """
+        if stage == "train":
+            return self.train_data.class_weights
+        elif stage == "val":
+            return self.val_data.class_weights
+        elif stage == "test":
+            return self.test_data.class_weights
+        else:
+            raise ValueError(f"Invalid stage: {stage}")
+
     def setup(self, stage: str):
         """
         Load the dataset from `self.root`/processed.
@@ -308,10 +336,14 @@ class PhysionetMotorImagery(pl.LightningDataModule):
             self.train_data = PhysionetMotorImageryDataset(train_files, self.epoch_length, self.epoch_overlap)
             self.val_data = PhysionetMotorImageryDataset(val_files, self.epoch_length, self.epoch_overlap)
             self.test_data = PhysionetMotorImageryDataset(test_files, self.epoch_length, self.epoch_overlap)
-
-        if stage == "tes%t":
+        elif stage == "val":
+            val_files = self.list_processed_files(self.val_subjects, runs)
+            self.val_data = PhysionetMotorImageryDataset(val_files, self.epoch_length, self.epoch_overlap)
+        elif stage == "test":
             test_files = self.list_processed_files(self.test_subjects, runs)
             self.test_data = PhysionetMotorImageryDataset(test_files, self.epoch_length, self.epoch_overlap)
+        else:
+            raise ValueError(f"Invalid stage: {stage}")
 
     def train_dataloader(self) -> DataLoader:
         """

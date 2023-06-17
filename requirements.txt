@@ -2,3 +2,4 @@ lightning
 xformers
 mne
 joblib
+scikit-learn
