@@ -1,11 +1,12 @@
 import math
-from enum import Enum
 
 import lightning.pytorch as pl
 import torch
+import torch.nn.functional as F
 from torch import nn
-from torchmetrics import Accuracy
 from xformers.factory import xFormer, xFormerConfig
+
+from eegformer.utils import MLP3DPositionalEmbedding
 
 
 class Transformer(pl.LightningModule):
@@ -25,6 +26,10 @@ class Transformer(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
+        # 3D position embedding
+        self.pos_embed = MLP3DPositionalEmbedding(dim, add_class_token=True)
+
+        # configure encoder model
         xformer_config = [
             {
                 "block_type": "encoder",
@@ -41,28 +46,20 @@ class Transformer(pl.LightningModule):
                     },
                 },
                 "feedforward_config": {
-                    "name": "FusedMLP",
+                    "name": "MLP",
                     "dropout": pdropout,
                     "activation": "gelu",
                     "hidden_layer_multiplier": hidden_layer_multiplier,
-                },
-                "position_encoding_config": {
-                    "name": "mlp-3d",
-                    "dim_model": dim,
-                    "add_class_token": True,
                 },
             }
         ]
 
         config = xFormerConfig(xformer_config)
         self.model = xFormer.from_config(config)
-        print(self.model)
 
-        # The classifier head
+        # classifier head
         self.ln = nn.LayerNorm(dim)
         self.head = nn.Linear(dim, num_classes)
-        self.criterion = torch.nn.CrossEntropyLoss()
-        self.val_accuracy = Accuracy("binary")
 
     @staticmethod
     def linear_warmup_cosine_decay(warmup_steps, total_steps):
@@ -97,19 +94,21 @@ class Transformer(pl.LightningModule):
         return [optimizer], [scheduler]
 
     def forward(self, x, ch_pos):
-        x = self.model(x, ch_pos)
-        x = self.ln(x)
+        x = self.pos_embed(x, ch_pos)
+        x = self.model(x)
 
         # extract the class token
         x = x[:, 0]
 
+        x = self.ln(x)
         x = self.head(x)
         return x
 
     def training_step(self, batch, _):
-        x, y = batch
-        y_hat = self(x)
-        loss = self.criterion(y_hat, y)
+        signal, ch_pos, y = batch
+        y_hat = self(signal, ch_pos)
+
+        loss = F.cross_entropy(y_hat, y)
 
         self.logger.log_metrics(
             {
@@ -118,14 +117,14 @@ class Transformer(pl.LightningModule):
             },
             step=self.global_step,
         )
-
         return loss
 
     def evaluate(self, batch, stage=None):
         signal, ch_pos, y = batch
         y_hat = self(signal, ch_pos)
-        loss = self.criterion(y_hat, y)
-        acc = self.val_accuracy(y_hat, y)
+
+        loss = F.cross_entropy(y_hat, y)
+        acc = (y_hat.argmax(dim=-1) == y).float().mean()
 
         if stage:
             self.log(f"{stage}_loss", loss, prog_bar=True)

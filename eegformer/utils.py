@@ -3,15 +3,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 from mne.io import Raw
-from xformers.components.positional_embedding import (
-    PositionEmbedding,
-    PositionEmbeddingConfig,
-    register_positional_embedding,
-)
 
 
-@register_positional_embedding("mlp-3d", PositionEmbeddingConfig)
-class MLP3DPositionalEmbedding(PositionEmbedding):
+class MLP3DPositionalEmbedding(nn.Module):
     """
     MLP positional embedding for 3D data.
 
@@ -20,7 +14,7 @@ class MLP3DPositionalEmbedding(PositionEmbedding):
         add_class_token (bool): Whether to add a class token.
     """
 
-    def __init__(self, dim_model: int, add_class_token: bool = False, *_, **__):
+    def __init__(self, dim_model: int, add_class_token: bool = True):
         super().__init__()
         self.dim_model = dim_model
         self.mlp = nn.Sequential(

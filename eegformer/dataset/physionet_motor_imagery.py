@@ -239,7 +239,7 @@ class PhysionetMotorImagery(pl.LightningDataModule):
         epoch_length: float = 2.0,
         epoch_overlap: float = 0.5,
         batch_size: int = 32,
-        num_workers: int = 0,
+        num_workers: int = 8,
         root: str = "data",
         force_preprocessing: bool = False,
         n_jobs: int = -1,
