@@ -186,7 +186,7 @@ class Transformer(pl.LightningModule):
         cm = confusion_matrix(self.true_labels[stage], self.predicted_labels[stage], normalize="true")
         plt.figure()
         plt.imshow(cm, cmap="Reds")
-        plt.xticks(range(self.hparams.num_classes), self.trainer.datamodule.class_names, rotation=50, ha="right")
+        plt.xticks(range(self.hparams.num_classes), self.trainer.datamodule.class_names, rotation=60, ha="right")
         plt.yticks(range(self.hparams.num_classes), self.trainer.datamodule.class_names)
         plt.title(f"Confusion matrix ({stage})")
         plt.xlabel("Predicted")
