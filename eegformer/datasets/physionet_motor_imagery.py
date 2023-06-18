@@ -322,6 +322,24 @@ class PhysionetMotorImagery(pl.LightningDataModule):
             for sub in tqdm(self.train_subjects + self.val_subjects + self.test_subjects, desc="Checking data")
         )
 
+    @staticmethod
+    def num_classes(**kwargs) -> int:
+        if "task" not in kwargs:
+            raise ValueError("Missing argument: 'task'")
+
+        n = 0
+        if (kwargs["task"] & PhysionetMotorImageryTask.BASELINE).value > 0:
+            n += 2
+        if (kwargs["task"] & PhysionetMotorImageryTask.MOTOR_EXECUTION_LEFT_RIGHT).value > 0:
+            n += 2
+        if (kwargs["task"] & PhysionetMotorImageryTask.MOTOR_EXECUTION_HANDS_FEET).value > 0:
+            n += 2
+        if (kwargs["task"] & PhysionetMotorImageryTask.MOTOR_IMAGERY_LEFT_RIGHT).value > 0:
+            n += 2
+        if (kwargs["task"] & PhysionetMotorImageryTask.MOTOR_IMAGERY_HANDS_FEET).value > 0:
+            n += 2
+        return n
+
     @property
     def class_names(self):
         return list(self.train_data.label_to_idx.keys())

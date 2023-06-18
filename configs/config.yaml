@@ -3,32 +3,36 @@ trainer:
   logger:
     class_path: lightning.pytorch.loggers.WandbLogger
     init_args:
-      project: MotorMovementImagery
+      project: PhysionetMotorImagery
   max_epochs: -1
 model:
-  model_dim: 160
-  n_layer: 3
-  n_head: 8
-  hidden_layer_multiplier: 4
-  learning_rate: 1e-3
-  weight_decay: 0.1
-  dropout: 0.1
-  warmup_steps: 500
-  lr_decay_steps: 7500
-  num_classes: 10
-  input_dim: 320
+  class_path: eegformer.models.Transformer
+  init_args:
+    model_dim: 64
+    n_layer: 4
+    n_head: 4
+    hidden_layer_multiplier: 4
+    learning_rate: 5e-4
+    weight_decay: 0.0
+    dropout: 0.0
+    warmup_steps: 1000
+    lr_decay_steps: 50000
+    input_dim: 320
 data:
-  task: ALL
-  batch_size: 512
-  num_workers: 16
-  root: ~/data
-  augmentations:
-    class_path: eegformer.augmentations.Compose
-    init_args:
-      max_transforms: 0
-      transforms:
-        - class_path: eegformer.augmentations.GaussianNoiseSignal
-        - class_path: eegformer.augmentations.GaussianNoiseChannelPos
-        - class_path: eegformer.augmentations.FourierNoise
-        - class_path: eegformer.augmentations.RandomAmplitudeScaleShift
-        - class_path: eegformer.augmentations.RandomPhase
+  class_path: eegformer.datasets.PhysionetMotorImagery
+  init_args:
+    task: ALL
+    batch_size: 512
+    num_workers: 20
+    root: ~/data
+    # augmentations:
+    #   class_path: eegformer.augmentations.Compose
+    #   init_args:
+    #     max_transforms: 1
+    #     transforms:
+    #       - class_path: eegformer.augmentations.GaussianNoiseSignal
+    #       - class_path: eegformer.augmentations.GaussianNoiseChannelPos
+    #       - class_path: eegformer.augmentations.RandomTimeShift
+    #       - class_path: eegformer.augmentations.FourierNoise
+    #       - class_path: eegformer.augmentations.RandomAmplitudeScaleShift
+    #       - class_path: eegformer.augmentations.RandomPhase

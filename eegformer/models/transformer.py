@@ -16,12 +16,12 @@ class Transformer(pl.LightningModule):
         self,
         learning_rate=1e-3,
         weight_decay=0.0,
-        num_classes=10,
         model_dim=128,
         input_dim=320,
         n_layer=5,
         n_head=5,
         dropout=0.0,
+        num_classes=None,
         hidden_layer_multiplier=4,
         warmup_steps=500,
         lr_decay_steps=10000,
@@ -64,7 +64,7 @@ class Transformer(pl.LightningModule):
 
         # classifier head
         self.ln = nn.LayerNorm(model_dim)
-        self.head = nn.Linear(model_dim, num_classes)
+        self.head = nn.Linear(model_dim, self.hparams.num_classes)
 
         # initialize class weights
         self.class_weights = {}
