@@ -1,5 +1,8 @@
 # EEG Transformer
 
+## TODO
+- implement [WebDataset](https://github.com/webdataset/webdataset) file storage
+
 ## Installation
 1. clone this repository
 ```shell
