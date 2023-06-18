@@ -119,6 +119,36 @@ class FourierNoise(BaseTransform):
         self.std = std
 
     def __call__(self, signal: torch.Tensor, ch_pos: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        ft = torch.fft.fft(signal)
+        ft = torch.fft.fft(signal, dim=1)
         ft = ft + (torch.randn_like(ft) * ft.std(dim=0, keepdims=True) * self.std)
-        return torch.fft.ifft(ft).real, ch_pos
+        return torch.fft.ifft(ft, dim=1).real, ch_pos
+
+
+class RandomPhase(BaseTransform):
+    """
+    Randomly shift the phase of the signal in the frequency domain.
+
+    Args:
+        strength (float): The strength of the randomization.
+    """
+
+    def __init__(self, strength=0.3):
+        self.strength = strength
+
+    def __call__(self, signal: torch.Tensor, ch_pos: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        # transform the data into frequency domain
+        ft = torch.fft.fft(signal.T, dim=0)
+        # generate random rotations
+        segment_size = ft.size(0) // 2 - 1 if ft.size(0) % 2 == 0 else (ft.size(0) - 1) // 2
+        phase_segment = torch.rand(segment_size, 1) * torch.pi * 2j
+        # combine random segments to match Fourier phase
+        phase_segments = [
+            torch.zeros(1, 1),
+            phase_segment,
+            torch.zeros(1 if ft.size(0) % 2 == 0 else 0, 1),
+            -torch.flip(phase_segment, (0,)),
+        ]
+        random_phase = torch.cat(phase_segments, dim=0)
+        # transform back into the time domain
+        signal = torch.fft.ifft(ft * (random_phase * self.strength).exp(), dim=0).real.T
+        return signal, ch_pos

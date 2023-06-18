@@ -3,6 +3,8 @@ import math
 import lightning.pytorch as pl
 import torch
 import torch.nn.functional as F
+from matplotlib import pyplot as plt
+from sklearn.metrics import confusion_matrix
 from torch import nn
 from xformers.factory import xFormer, xFormerConfig
 
@@ -15,7 +17,8 @@ class Transformer(pl.LightningModule):
         learning_rate=1e-3,
         weight_decay=0.0,
         num_classes=10,
-        dim=320,
+        model_dim=128,
+        input_dim=320,
         n_layer=5,
         n_head=5,
         dropout=0.0,
@@ -27,15 +30,17 @@ class Transformer(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
+        # raw signal embedding
+        self.signal_embed = nn.Linear(input_dim, model_dim)
         # 3D position embedding
-        self.pos_embed = MLP3DPositionalEmbedding(dim, add_class_token=True)
+        self.pos_embed = MLP3DPositionalEmbedding(model_dim, add_class_token=True)
 
         # configure encoder model
         xformer_config = [
             {
                 "block_type": "encoder",
                 "num_layers": n_layer,
-                "dim_model": dim,
+                "dim_model": model_dim,
                 "residual_norm_style": "pre",
                 "multi_head_config": {
                     "num_heads": n_head,
@@ -58,8 +63,8 @@ class Transformer(pl.LightningModule):
         self.model = xFormer.from_config(config)
 
         # classifier head
-        self.ln = nn.LayerNorm(dim)
-        self.head = nn.Linear(dim, num_classes)
+        self.ln = nn.LayerNorm(model_dim)
+        self.head = nn.Linear(model_dim, num_classes)
 
         # initialize class weights
         self.class_weights = {}
@@ -100,6 +105,7 @@ class Transformer(pl.LightningModule):
         if self.hparams.z_transform:
             x = (x - x.mean(dim=-1, keepdims=True)) / (x.std(dim=-1, keepdims=True) + 1e-8)
 
+        x = self.signal_embed(x)
         x = self.pos_embed(x, ch_pos)
         x = self.model(x)
 
@@ -116,11 +122,12 @@ class Transformer(pl.LightningModule):
 
         loss = F.cross_entropy(y_hat, y, weight=self.class_weights[stage])
 
-        if stage:
+        if stage and not self.trainer.sanity_checking:
             acc = (y_hat.argmax(dim=-1) == y).float().mean()
 
             self.log(f"{stage}/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
             self.log(f"{stage}/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
+            self.accumulate_labels(y, y_hat.argmax(dim=-1), stage)
         if stage == "train":
             self.log("learning_rate", self.lr_schedulers().get_last_lr()[0], on_step=False, on_epoch=True)
         return loss
@@ -134,14 +141,56 @@ class Transformer(pl.LightningModule):
     def test_step(self, batch, _):
         self.evaluate(batch, "test")
 
-    def on_train_start(self):
+    def on_train_epoch_start(self):
+        self.initialize_labels()
+
         if "train" not in self.class_weights:
             self.class_weights["train"] = self.trainer.datamodule.class_weights("train").to(self.device)
 
-    def on_validation_start(self):
+    def on_validation_epoch_start(self):
         if "val" not in self.class_weights:
             self.class_weights["val"] = self.trainer.datamodule.class_weights("val").to(self.device)
 
-    def on_test_start(self):
+    def on_test_epoch_start(self):
         if "test" not in self.class_weights:
             self.class_weights["test"] = self.trainer.datamodule.class_weights("test").to(self.device)
+
+    def on_train_epoch_end(self):
+        self.log_confusion_matrix("train")
+
+    def on_validation_epoch_end(self):
+        if self.trainer.sanity_checking:
+            return
+        self.log_confusion_matrix("val")
+
+    def on_test_epoch_end(self):
+        self.log_confusion_matrix("test")
+
+    def initialize_labels(self):
+        # initialize containers for true and predicted labels
+        self.true_labels = {}
+        self.predicted_labels = {}
+
+    def accumulate_labels(self, y_true, y_pred, stage):
+        # accumulate true labels
+        if stage not in self.true_labels:
+            self.true_labels[stage] = []
+        self.true_labels[stage].extend(y_true.cpu().numpy())
+        # accumulate predicted labels
+        if stage not in self.predicted_labels:
+            self.predicted_labels[stage] = []
+        self.predicted_labels[stage].extend(y_pred.cpu().numpy())
+
+    def log_confusion_matrix(self, stage):
+        # compute and log the confusion matrix
+        cm = confusion_matrix(self.true_labels[stage], self.predicted_labels[stage], normalize="true")
+        plt.figure()
+        plt.imshow(cm, cmap="Reds")
+        plt.xticks(range(self.hparams.num_classes), self.trainer.datamodule.class_names, rotation=50, ha="right")
+        plt.yticks(range(self.hparams.num_classes), self.trainer.datamodule.class_names)
+        plt.title(f"Confusion matrix ({stage})")
+        plt.xlabel("Predicted")
+        plt.ylabel("True")
+        plt.tight_layout()
+        self.logger.experiment.log({f"confusion_matrix_{stage}": plt})
+        plt.close()
