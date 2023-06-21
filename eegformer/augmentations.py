@@ -67,7 +67,7 @@ class RandomTimeShift(BaseTransform):
         - `std` (float): Standard deviation of the random time shift (in samples).
     """
 
-    def __init__(self, std=5.0):
+    def __init__(self, std=3.0):
         self.std = std
 
     def __call__(self, args: Tuple[torch.Tensor, torch.Tensor, int]) -> Tuple[torch.Tensor, torch.Tensor, int]:
@@ -103,7 +103,7 @@ class GaussianNoiseChannelPos(BaseTransform):
         - `std` (float): The standard deviation of the Gaussian distribution.
     """
 
-    def __init__(self, std=0.2):
+    def __init__(self, std=0.08):
         self.std = std
 
     def __call__(self, args: Tuple[torch.Tensor, torch.Tensor, int]) -> Tuple[torch.Tensor, torch.Tensor, int]:
