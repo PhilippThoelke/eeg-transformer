@@ -15,20 +15,26 @@ from eegformer.models.utils import MLP3DPositionalEmbedding
 
 
 class Transformer(pl.LightningModule):
+    """
+    Transformer model for EEG classification.
+
+    TODO: offload model configuration and instantiation to a separate class
+    """
+
     def __init__(
         self,
-        learning_rate=1e-3,
-        weight_decay=0.0,
-        model_dim=128,
-        input_dim=320,
-        n_layer=5,
-        n_head=5,
-        dropout=0.0,
-        num_classes=None,
-        hidden_layer_multiplier=4,
-        warmup_steps=500,
-        lr_decay_steps=10000,
-        z_transform=True,
+        model_dim: int = 128,
+        input_dim: int = 320,
+        n_layer: int = 5,
+        n_head: int = 5,
+        hidden_layer_multiplier: int = 4,
+        learning_rate: float = 1e-3,
+        warmup_steps: int = 500,
+        lr_decay_steps: int = 10000,
+        weight_decay: float = 0.0,
+        dropout: float = 0.0,
+        num_classes: int = None,
+        z_transform: bool = True,
     ):
         super().__init__()
         self.save_hyperparameters()
