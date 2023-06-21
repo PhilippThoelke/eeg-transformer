@@ -9,7 +9,7 @@ class BaseTransform(ABC):
     Base class for all transforms.
     """
 
-    def __call__(self, signal: torch.Tensor, ch_pos: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __call__(self, args: Tuple[torch.Tensor, torch.Tensor, int]) -> Tuple[torch.Tensor, torch.Tensor, int]:
         raise NotImplementedError
 
 
@@ -17,18 +17,18 @@ class Compose(BaseTransform):
     """
     Compose multiple transforms into one and optionally randomly select a random subset of transforms.
 
-    Args:
-        transforms (List[BaseTransform]): List of transforms to compose.
-        max_transforms (Optional[int]): If not None, randomly select a number of transforms from the list.
+    ### Args
+        - `transforms` (List[BaseTransform]): List of transforms to compose.
+        - `max_transforms` (Optional[int]): If not None, randomly select a number of transforms from the list.
     """
 
     def __init__(self, transforms: List[BaseTransform], max_transforms: Optional[int] = None):
         self.transforms = transforms
 
-    def __call__(self, signal: torch.Tensor, ch_pos: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __call__(self, args: Tuple[torch.Tensor, torch.Tensor, int]) -> Tuple[torch.Tensor, torch.Tensor, int]:
         for transform in self.transforms:
-            signal, ch_pos = transform(signal, ch_pos)
-        return signal, ch_pos
+            args = transform(args)
+        return args
 
 
 class RandomAmplitudeScaleShift(BaseTransform):
@@ -36,10 +36,10 @@ class RandomAmplitudeScaleShift(BaseTransform):
     Randomly scale and shift the amplitude of the signal. The scale and shift are sampled from a normal distribution,
     the standard deviations are additionally multiplied by the signal standard deviation.
 
-    Args:
-        std_shift (float): Standard deviation of the random amplitude shift.
-        std_scale (float): Standard deviation of the random amplitude scale.
-        channelwise (bool): Whether to apply the same scale and shift to all channels.
+    ### Args
+        - `std_shift` (float): Standard deviation of the random amplitude shift.
+        - `std_scale` (float): Standard deviation of the random amplitude scale.
+        - `channelwise` (bool): Whether to apply the same scale and shift to all channels.
     """
 
     def __init__(self, std_shift=0.1, std_scale=0.1, channelwise=True):
@@ -47,14 +47,15 @@ class RandomAmplitudeScaleShift(BaseTransform):
         self.std_scale = std_scale
         self.channelwise = channelwise
 
-    def __call__(self, signal: torch.Tensor, ch_pos: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __call__(self, args: Tuple[torch.Tensor, torch.Tensor, int]) -> Tuple[torch.Tensor, torch.Tensor, int]:
+        signal, ch_pos, label = args
         if self.channelwise:
             shift = torch.randn(signal.shape[0], 1) * signal.std() * self.std_shift
             scale = torch.randn(signal.shape[0], 1) * signal.std() * self.std_scale + 1
         else:
             shift = torch.randn(1) * signal.std() * self.std_shift
             scale = torch.randn(1) * signal.std() * self.std_scale + 1
-        return signal * scale + shift, ch_pos
+        return signal * scale + shift, ch_pos, label
 
 
 class RandomTimeShift(BaseTransform):
@@ -62,17 +63,18 @@ class RandomTimeShift(BaseTransform):
     Randomly shift the signal in time by a number of samples. Time points that are shifted beyond the signal length
     are wrapped around to the beginning of the signal.
 
-    Args:
-        std (float): Standard deviation of the random time shift (in samples).
+    ### Args
+        - `std` (float): Standard deviation of the random time shift (in samples).
     """
 
     def __init__(self, std=5.0):
         self.std = std
 
-    def __call__(self, signal: torch.Tensor, ch_pos: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __call__(self, args: Tuple[torch.Tensor, torch.Tensor, int]) -> Tuple[torch.Tensor, torch.Tensor, int]:
+        signal, ch_pos, label = args
         shift = torch.randn(1) * self.std
         shift = int(shift.item())
-        return torch.roll(signal, shift, dims=1), ch_pos
+        return torch.roll(signal, shift, dims=1), ch_pos, label
 
 
 class GaussianNoiseSignal(BaseTransform):
@@ -80,15 +82,16 @@ class GaussianNoiseSignal(BaseTransform):
     Add Gaussian noise to the signal. The noise is scaled by the
     standard deviation of the signal.
 
-    Args:
-        std (float): The standard deviation of the Gaussian distribution.
+    ### Args
+        - `std` (float): The standard deviation of the Gaussian distribution.
     """
 
     def __init__(self, std=0.1):
         self.std = std
 
-    def __call__(self, signal: torch.Tensor, ch_pos: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        return signal + (torch.randn_like(signal) * signal.std() * self.std), ch_pos
+    def __call__(self, args: Tuple[torch.Tensor, torch.Tensor, int]) -> Tuple[torch.Tensor, torch.Tensor, int]:
+        signal, ch_pos, label = args
+        return signal + (torch.randn_like(signal) * signal.std() * self.std), ch_pos, label
 
 
 class GaussianNoiseChannelPos(BaseTransform):
@@ -96,46 +99,49 @@ class GaussianNoiseChannelPos(BaseTransform):
     Add Gaussian noise to the channel positions. The noise is additionally scaled by
     the standard deviation of the channel positions.
 
-    Args:
-        std (float): The standard deviation of the Gaussian distribution.
+    ### Args
+        - `std` (float): The standard deviation of the Gaussian distribution.
     """
 
     def __init__(self, std=0.2):
         self.std = std
 
-    def __call__(self, signal: torch.Tensor, ch_pos: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        return signal, ch_pos + (torch.randn_like(ch_pos) * ch_pos.std() * self.std)
+    def __call__(self, args: Tuple[torch.Tensor, torch.Tensor, int]) -> Tuple[torch.Tensor, torch.Tensor, int]:
+        signal, ch_pos, label = args
+        return signal, ch_pos + (torch.randn_like(ch_pos) * ch_pos.std() * self.std), label
 
 
 class FourierNoise(BaseTransform):
     """
     Add Fourier noise to the signal.
 
-    Args:
-        std (float): The standard deviation of the Gaussian distribution.
+    ### Args
+        - `std` (float): The standard deviation of the Gaussian distribution.
     """
 
     def __init__(self, std=0.5):
         self.std = std
 
-    def __call__(self, signal: torch.Tensor, ch_pos: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __call__(self, args: Tuple[torch.Tensor, torch.Tensor, int]) -> Tuple[torch.Tensor, torch.Tensor, int]:
+        signal, ch_pos, label = args
         ft = torch.fft.fft(signal, dim=1)
         ft = ft + (torch.randn_like(ft) * ft.std(dim=0, keepdims=True) * self.std)
-        return torch.fft.ifft(ft, dim=1).real, ch_pos
+        return torch.fft.ifft(ft, dim=1).real, ch_pos, label
 
 
 class RandomPhase(BaseTransform):
     """
     Randomly shift the phase of the signal in the frequency domain.
 
-    Args:
-        strength (float): The strength of the randomization.
+    ### Args
+        - `strength` (float): The strength of the randomization.
     """
 
     def __init__(self, strength=0.3):
         self.strength = strength
 
-    def __call__(self, signal: torch.Tensor, ch_pos: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __call__(self, args: Tuple[torch.Tensor, torch.Tensor, int]) -> Tuple[torch.Tensor, torch.Tensor, int]:
+        signal, ch_pos, label = args
         # transform the data into frequency domain
         ft = torch.fft.fft(signal.T, dim=0)
         # generate random rotations
@@ -151,4 +157,4 @@ class RandomPhase(BaseTransform):
         random_phase = torch.cat(phase_segments, dim=0)
         # transform back into the time domain
         signal = torch.fft.ifft(ft * (random_phase * self.strength).exp(), dim=0).real.T
-        return signal, ch_pos
+        return signal, ch_pos, label

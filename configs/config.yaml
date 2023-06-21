@@ -19,20 +19,22 @@ model:
     lr_decay_steps: 50000
     input_dim: 320
 data:
-  class_path: eegformer.datasets.PhysionetMotorImagery
-  init_args:
-    task: ALL
-    batch_size: 512
-    num_workers: 20
+  dataclass: eegformer.datasets.PhysionetMotorImagery
+  dataset_kwargs:
+    task: MOTOR_EXECUTION_LEFT_RIGHT
     root: ~/data
-    # augmentations:
-    #   class_path: eegformer.augmentations.Compose
-    #   init_args:
-    #     max_transforms: 1
-    #     transforms:
-    #       - class_path: eegformer.augmentations.GaussianNoiseSignal
-    #       - class_path: eegformer.augmentations.GaussianNoiseChannelPos
-    #       - class_path: eegformer.augmentations.RandomTimeShift
-    #       - class_path: eegformer.augmentations.FourierNoise
-    #       - class_path: eegformer.augmentations.RandomAmplitudeScaleShift
-    #       - class_path: eegformer.augmentations.RandomPhase
+  preprocessing:
+      n_jobs: -1
+  batch_size: 512
+  num_workers: 24
+  augmentations:
+    class_path: eegformer.augmentations.Compose
+    init_args:
+      max_transforms: 1
+      transforms:
+        - class_path: eegformer.augmentations.GaussianNoiseSignal
+        - class_path: eegformer.augmentations.GaussianNoiseChannelPos
+        # - class_path: eegformer.augmentations.RandomTimeShift
+        # - class_path: eegformer.augmentations.FourierNoise
+        # - class_path: eegformer.augmentations.RandomAmplitudeScaleShift
+        # - class_path: eegformer.augmentations.RandomPhase

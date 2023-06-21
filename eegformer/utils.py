@@ -1,118 +1,104 @@
+import hashlib
+from dataclasses import dataclass
+from typing import List, Optional
+
 import mne
 import numpy as np
-import torch
-import torch.nn as nn
 from mne.io import Raw
 
 
-class MLP3DPositionalEmbedding(nn.Module):
-    """
-    MLP positional embedding for 3D data.
-
-    Args:
-        dim_model (int): The dimensionality of the model.
-        add_class_token (bool): Whether to add a class token.
-    """
-
-    def __init__(self, dim_model: int, add_class_token: bool = True):
-        super().__init__()
-        self.dim_model = dim_model
-        self.mlp = nn.Sequential(
-            nn.Linear(3, dim_model // 2),
-            nn.ReLU(),
-            nn.Linear(dim_model // 2, dim_model),
-        )
-        self.class_token = torch.nn.Parameter(torch.zeros(dim_model)) if add_class_token else None
-
-    def forward(self, x: torch.Tensor, ch_pos: torch.Tensor) -> torch.Tensor:
-        """
-        Embed the channel positions and optionally prepend a class token to the channel dimension.
-        """
-        # embed the channel positions
-        out = x + self.mlp(ch_pos)
-
-        # prepend class token
-        if self.class_token is not None:
-            clf_token = torch.ones(out.shape[0], 1, out.shape[-1], device=out.device) * self.class_token
-            out = torch.cat([clf_token, out], dim=1)
-        return out
-
-
-class TorchEpoch:
-    """
-    An epoch with a single label. Contains the raw signal, the channel positions and the label.
-
-    Args:
-        signal (torch.Tensor): The raw signal with shape (channels, time).
-        ch_pos (torch.Tensor): The channel positions with shape (channels, 3).
-        sfreq (float): The sampling frequency of the signal.
-        label str: The class label of the data.
-    """
-
-    def __init__(self, signal: torch.Tensor, ch_pos: torch.Tensor, sfreq: float, label: str):
-        self.signal = signal
-        self.ch_pos = ch_pos
-        self.sfreq = sfreq
-        self.label = label
-
-
+@dataclass
 class PreprocessingConfig:
     """
-    The configuration for the preprocessing.
+    Preprocessing configuration.
 
-    Args:
-        notch_filter (bool): Whether to apply a notch filter.
-        low_pass (float): The low pass frequency.
-        high_pass (float): The high pass frequency.
-        resample (float): Frequency to resample to.
+    ### Args:
+        - `notch_filter` (bool): Whether to apply a notch filter (default: True).
+        - `low_pass` (float): The low pass frequency (default: None).
+        - `high_pass` (float): The high pass frequency (default: None).
+        - `resample` (float): Frequency to resample to (default: None).
+        - `epoch_length` (float): Length of epochs in seconds (default: 2.0).
+        - `epoch_overlap` (float): Overlap of epochs in seconds (default: 0.5).
+        - `force` (bool): Whether to force preprocessing even if the file already exists (default: False).
+        - `n_jobs` (int): Number of jobs to use for parallel processing (default: -1).
     """
 
-    def __init__(
-        self, notch_filter: bool = True, low_pass: float = None, high_pass: float = None, resample: float = None
-    ) -> None:
-        self.notch_filter = notch_filter
-        self.low_pass = low_pass
-        self.high_pass = high_pass
-        self.resample = resample
+    notch_filter: bool = True
+    low_pass: Optional[float] = None
+    high_pass: Optional[float] = None
+    resample: Optional[float] = None
+    epoch_length: float = 2.0
+    epoch_overlap: float = 0.5
+    force: bool = False
+    n_jobs: int = -1
+
+    def __hash__(self) -> int:
+        """
+        Compute the hash of the configuration, only considering attributes that affect the output.
+        """
+
+        # select attributes and make sure they have their respective type
+        values = (
+            bool(self.notch_filter),
+            float(self.low_pass) if self.low_pass is not None else None,
+            float(self.high_pass) if self.high_pass is not None else None,
+            float(self.resample) if self.resample is not None else None,
+            float(self.epoch_length),
+            float(self.epoch_overlap),
+        )
+        # return the has of the tuple of all values
+        return int(hashlib.sha1(repr(values).encode("utf-8")).hexdigest(), 16) % (10**10)
 
 
-def preprocess(raw: Raw, config: PreprocessingConfig) -> Raw:
+def preprocess(raw: Raw, config: PreprocessingConfig) -> List[np.ndarray]:
     """
     Preprocess a raw MNE object.
 
-    Args:
-        raw (mne.io.Raw): The raw MNE object.
-        config (PreprocessingConfig): The preprocessing configuration.
+    ### Args:
+        - `raw` (mne.io.Raw): The raw MNE object.
+        - `config` (PreprocessingConfig): The preprocessing configuration.
+
+    ### Returns:
+        List[np.ndarray]: The preprocessed raw epochs.
     """
+    if (raw.tmax - raw.tmin) < config.epoch_length:
+        # return empty list if the raw data is too short
+        return []
+
     # apply notch filter
     if config.notch_filter:
         if raw.info["line_freq"] is None:
             raise ValueError("Line frequency is not set.")
 
         freqs = np.arange(raw.info["line_freq"], raw.info["sfreq"] / 2, raw.info["line_freq"])
-        raw = raw.notch_filter(freqs, verbose="ERROR")
+        raw = raw.notch_filter(freqs, verbose="ERROR", n_jobs=config.n_jobs)
 
     # apply band pass filter
     if config.low_pass is not None or config.high_pass is not None:
-        raw = raw.filter(config.low_pass, config.high_pass, verbose="ERROR")
+        raw = raw.filter(config.low_pass, config.high_pass, verbose="ERROR", n_jobs=config.n_jobs)
 
     # resample
     if config.resample is not None and raw.info["sfreq"] != config.resample:
-        raw = raw.resample(config.resample, verbose="ERROR")
+        raw = raw.resample(config.resample, verbose="ERROR", n_jobs=config.n_jobs)
 
-    # return preprocessed raw
-    return raw
+    # split into epochs
+    epochs = mne.make_fixed_length_epochs(
+        raw, duration=config.epoch_length, overlap=config.epoch_overlap, verbose="ERROR"
+    )
+
+    # return preprocessed raw epochs
+    return list(epochs.get_data().astype(np.float32))
 
 
-def get_channel_pos(raw: Raw) -> torch.Tensor:
+def extract_ch_pos(raw: Raw) -> np.ndarray:
     """
     Get the channel positions from a raw MNE object.
 
-    Args:
-        raw (mne.io.Raw): The raw MNE object.
+    ### Args:
+        - `raw` (mne.io.Raw): The raw MNE object.
 
-    Returns:
-        torch.Tensor: The channel positions.
+    ### Returns:
+        np.ndarray: The channel positions with shape (channels, 3).
     """
     montage = raw.get_montage()
     if montage is None:
@@ -123,5 +109,5 @@ def get_channel_pos(raw: Raw) -> torch.Tensor:
 
     # get channel positions
     ch_pos = montage.get_positions()["ch_pos"]
-    ch_pos = np.array([ch_pos[ch] for ch in raw.ch_names])
-    return torch.from_numpy(ch_pos).float()
+    ch_pos = np.array([ch_pos[ch] for ch in raw.ch_names], dtype=np.float32)
+    return ch_pos

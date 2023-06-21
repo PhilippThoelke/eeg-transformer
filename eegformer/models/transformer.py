@@ -1,14 +1,17 @@
 import math
 
 import lightning.pytorch as pl
+import matplotlib
 import torch
 import torch.nn.functional as F
+
+matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 from sklearn.metrics import confusion_matrix
 from torch import nn
 from xformers.factory import xFormer, xFormerConfig
 
-from eegformer.utils import MLP3DPositionalEmbedding
+from eegformer.models.utils import MLP3DPositionalEmbedding
 
 
 class Transformer(pl.LightningModule):
@@ -67,7 +70,7 @@ class Transformer(pl.LightningModule):
         self.head = nn.Linear(model_dim, self.hparams.num_classes)
 
         # initialize class weights
-        self.class_weights = {}
+        self.class_weights = None
 
     @staticmethod
     def linear_warmup_cosine_decay(warmup_steps, total_steps):
@@ -120,7 +123,7 @@ class Transformer(pl.LightningModule):
         signal, ch_pos, y = batch
         y_hat = self(signal, ch_pos)
 
-        loss = F.cross_entropy(y_hat, y, weight=self.class_weights[stage])
+        loss = F.cross_entropy(y_hat, y, weight=self.class_weights)
 
         if stage and not self.trainer.sanity_checking:
             acc = (y_hat.argmax(dim=-1) == y).float().mean()
@@ -144,16 +147,8 @@ class Transformer(pl.LightningModule):
     def on_train_epoch_start(self):
         self.initialize_labels()
 
-        if "train" not in self.class_weights:
-            self.class_weights["train"] = self.trainer.datamodule.class_weights("train").to(self.device)
-
-    def on_validation_epoch_start(self):
-        if "val" not in self.class_weights:
-            self.class_weights["val"] = self.trainer.datamodule.class_weights("val").to(self.device)
-
-    def on_test_epoch_start(self):
-        if "test" not in self.class_weights:
-            self.class_weights["test"] = self.trainer.datamodule.class_weights("test").to(self.device)
+        if self.class_weights is None:
+            self.class_weights = self.trainer.datamodule.class_weights("train").to(self.device)
 
     def on_train_epoch_end(self):
         self.log_confusion_matrix("train")
@@ -182,15 +177,24 @@ class Transformer(pl.LightningModule):
         self.predicted_labels[stage].extend(y_pred.cpu().numpy())
 
     def log_confusion_matrix(self, stage):
-        # compute and log the confusion matrix
+        # get class names
+        class_names = [self.trainer.datamodule.train_data.idx2label(i) for i in range(self.hparams.num_classes)]
+        if class_names[0] is NotImplemented:
+            class_names = [str(i) for i in range(self.hparams.num_classes)]
+
+        # compute confusion matrix
         cm = confusion_matrix(self.true_labels[stage], self.predicted_labels[stage], normalize="true")
+
+        # visualize confusion matrix
         plt.figure()
         plt.imshow(cm, cmap="Reds")
-        plt.xticks(range(self.hparams.num_classes), self.trainer.datamodule.class_names, rotation=60, ha="right")
-        plt.yticks(range(self.hparams.num_classes), self.trainer.datamodule.class_names)
+        plt.xticks(range(self.hparams.num_classes), class_names, rotation=60, ha="right")
+        plt.yticks(range(self.hparams.num_classes), class_names)
         plt.title(f"Confusion matrix ({stage})")
         plt.xlabel("Predicted")
         plt.ylabel("True")
         plt.tight_layout()
+
+        # log confusion matrix
         self.logger.experiment.log({f"confusion_matrix_{stage}": plt})
         plt.close()

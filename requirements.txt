@@ -4,3 +4,4 @@ mne
 joblib
 scikit-learn
 wandb
+webdataset
