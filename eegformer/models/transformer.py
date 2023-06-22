@@ -181,7 +181,7 @@ class Transformer(pl.LightningModule):
             self.log(f"{stage}/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
             self.accumulate_labels(y, y_hat.argmax(dim=-1), stage)
         if stage == "train":
-            self.log("learning_rate", self.lr_schedulers().get_last_lr()[0], on_step=False, on_epoch=True)
+            self.log("learning_rate", self.lr_schedulers().get_last_lr()[0], on_step=True, on_epoch=False)
         return loss
 
     def training_step(self, batch, _):
