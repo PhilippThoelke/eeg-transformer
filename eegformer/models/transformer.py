@@ -40,9 +40,11 @@ class Transformer(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
+        assert model_dim % n_head == 0, "model_dim must be divisible by n_head"
+
+        # initialize raw signal batchnorm
         if raw_batchnorm:
             self.raw_norm = nn.BatchNorm1d(input_dim)
-
         # raw signal embedding
         self.signal_embed = nn.Linear(input_dim, model_dim)
         # 3D position embedding
