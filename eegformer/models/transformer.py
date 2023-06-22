@@ -35,10 +35,13 @@ class Transformer(pl.LightningModule):
         weight_decay: float = 0.0,
         dropout: float = 0.0,
         num_classes: int = None,
-        z_transform: bool = True,
+        raw_batchnorm: bool = True,
     ):
         super().__init__()
         self.save_hyperparameters()
+
+        if raw_batchnorm:
+            self.raw_norm = nn.BatchNorm1d(input_dim)
 
         # raw signal embedding
         self.signal_embed = nn.Linear(input_dim, model_dim)
@@ -121,9 +124,9 @@ class Transformer(pl.LightningModule):
             - `mask` (Tensor): optional attention mask (batch, channels)
 
         """
-        # normalize the signal
-        if self.hparams.z_transform:
-            x = (x - x.mean(dim=-1, keepdims=True)) / (x.std(dim=-1, keepdims=True) + 1e-8)
+        if self.hparams.raw_batchnorm:
+            # normalize the raw signal
+            x = self.raw_norm(x.permute(0, 2, 1)).permute(0, 2, 1)
 
         # forward pass of the Transformer
         x = self.signal_embed(x)
