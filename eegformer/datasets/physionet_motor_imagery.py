@@ -116,7 +116,6 @@ def preprocess_subject(
     processed_path: str,
     task: PhysionetMotorImageryTask,
     config: PreprocessingConfig,
-    force: bool = False,
 ) -> str:
     """
     Preprocess data from a single subject and save individual epochs to a WebDataset shard.
@@ -127,14 +126,13 @@ def preprocess_subject(
         - `processed_path` (str): Path to the processed data.
         - `task` (PhysionetMotorImageryTask): The task to preprocess.
         - `config` (PreprocessingConfig): The preprocessing configuration.
-        - `force` (bool): Whether to force preprocessing even if the file already exists.
 
     ### Returns
         str: Path to the saved WebDataset .tar shard.
     """
     current_shard = shard_name(sub, task, config)
     shard_path = join(processed_path, current_shard)
-    if not force and exists(shard_path):
+    if not config.force and exists(shard_path):
         # skip preprocessing if the file already exists
         return shard_path
 
