@@ -11,15 +11,17 @@ class MLP3DPositionalEmbedding(nn.Module):
     ### Args
         - `dim_model` (int): The dimensionality of the model.
         - `add_class_token` (bool): Whether to add a class token.
+        - `dropout` (float): Dropout rate.
     """
 
-    def __init__(self, dim_model: int, add_class_token: bool = True):
+    def __init__(self, dim_model: int, add_class_token: bool = True, dropout: float = 0.0):
         super().__init__()
-        self.dim_model = dim_model
+        self.dropout = nn.Dropout(dropout)
         self.mlp = nn.Sequential(
-            nn.Linear(3, dim_model // 2),
-            nn.ReLU(),
-            nn.Linear(dim_model // 2, dim_model),
+            nn.Linear(3, dim_model * 2),
+            nn.Tanh(),
+            nn.Linear(dim_model * 2, dim_model),
+            nn.Tanh(),
         )
         self.class_token = torch.nn.Parameter(torch.zeros(dim_model)) if add_class_token else None
 
@@ -46,6 +48,9 @@ class MLP3DPositionalEmbedding(nn.Module):
         else:
             out = x
             out[mask] = x[mask] + self.mlp(ch_pos[mask])
+
+        # apply dropout
+        out = self.dropout(out)
 
         # prepend class token
         if self.class_token is not None:

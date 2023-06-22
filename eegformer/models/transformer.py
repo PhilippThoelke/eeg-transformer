@@ -46,7 +46,7 @@ class Transformer(pl.LightningModule):
         # raw signal embedding
         self.signal_embed = nn.Linear(input_dim, model_dim)
         # 3D position embedding
-        self.pos_embed = MLP3DPositionalEmbedding(model_dim, add_class_token=True)
+        self.pos_embed = MLP3DPositionalEmbedding(model_dim, add_class_token=True, dropout=dropout)
 
         # configure encoder model
         xformer_config = [
