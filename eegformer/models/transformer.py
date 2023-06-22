@@ -32,6 +32,7 @@ class Transformer(pl.LightningModule):
         learning_rate: float = 1e-3,
         warmup_steps: int = 500,
         lr_decay_steps: int = 10000,
+        lr_cycle_steps: int = 5000,
         weight_decay: float = 0.0,
         dropout: float = 0.0,
         num_classes: int = None,
@@ -90,17 +91,34 @@ class Transformer(pl.LightningModule):
         self.class_weights = None
 
     @staticmethod
-    def linear_warmup_cosine_decay(warmup_steps, total_steps):
+    def linear_warmup_cosine_decay(warmup_steps, total_steps, cycle_steps=None):
         """
-        Linear warmup for warmup_steps, with cosine annealing to 0 at total_steps
+        Linear warmup for warmup_steps, with cosine annealing to 0 at total_steps and optional cycles.
+
+        ### Args
+            - `warmup_steps` (int): number of warmup steps
+            - `total_steps` (int): total number of steps to decay to 0
+            - `cycle_steps` (int): number of steps per cycle (default: None)
+
+        ### Returns
+            - `fn` (function): function that takes in a step and returns a learning rate factor
         """
 
-        def fn(step):
+        def fn(step: int) -> float:
+            # linear warmup
             if step < warmup_steps:
                 return float(step) / float(max(1, warmup_steps))
 
+            # cosine decay to 0 after warmup
             progress = float(step - warmup_steps) / float(max(1, total_steps - warmup_steps))
-            return 0.5 * (1.0 + math.cos(math.pi * progress))
+            decay = 0.5 * (1.0 + math.cos(math.pi * progress))
+
+            if cycle_steps is None:
+                return decay
+
+            # cosine decay to 0 after warmup, with cycles
+            cycle_progress = float(step - warmup_steps) / float(max(1, cycle_steps - warmup_steps))
+            return decay * 0.5 * (1.0 + math.cos(math.pi * 2.0 * cycle_progress))
 
         return fn
 
@@ -114,7 +132,9 @@ class Transformer(pl.LightningModule):
         scheduler = {
             "scheduler": torch.optim.lr_scheduler.LambdaLR(
                 optimizer,
-                self.linear_warmup_cosine_decay(self.hparams.warmup_steps, self.hparams.lr_decay_steps),
+                self.linear_warmup_cosine_decay(
+                    self.hparams.warmup_steps, self.hparams.lr_decay_steps, cycle_steps=self.hparams.lr_cycle_steps
+                ),
             ),
             "interval": "step",
         }
