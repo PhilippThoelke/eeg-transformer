@@ -45,6 +45,7 @@ class Transformer(pl.LightningModule):
         # initialize raw signal batchnorm
         if raw_batchnorm:
             self.raw_norm = nn.BatchNorm1d(input_dim)
+
         # raw signal embedding
         self.signal_embed = nn.Linear(input_dim, model_dim)
         # 3D position embedding
@@ -78,8 +79,12 @@ class Transformer(pl.LightningModule):
         self.model = xFormer.from_config(config)
 
         # classifier head
-        self.ln = nn.LayerNorm(model_dim)
-        self.head = nn.Linear(model_dim, self.hparams.num_classes)
+        self.head = nn.Sequential(
+            nn.LayerNorm(model_dim),
+            nn.Linear(model_dim, model_dim // 2),
+            nn.GELU(),
+            nn.Linear(model_dim // 2, num_classes),
+        )
 
         # initialize class weights
         self.class_weights = None
@@ -130,15 +135,16 @@ class Transformer(pl.LightningModule):
             # normalize the raw signal
             x = self.raw_norm(x.permute(0, 2, 1)).permute(0, 2, 1)
 
-        # forward pass of the Transformer
+        # embed the raw signal
         x = self.signal_embed(x)
         x, mask = self.pos_embed(x, ch_pos, mask=mask)
+
+        # forward pass of the Transformer
         x = self.model(x, encoder_input_mask=mask)
 
         # extract the class token
         x = x[:, 0]
-
-        x = self.ln(x)
+        # classifier head
         x = self.head(x)
         return x
 
