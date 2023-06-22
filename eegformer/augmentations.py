@@ -183,7 +183,7 @@ class ChannelDropout(BaseTransform):
         - `min_channels` (int): The minimum number of channels to keep.
     """
 
-    def __init__(self, p=0.2, min_channels=4):
+    def __init__(self, p=0.5, min_channels=4):
         self.p = p
         self.min_channels = min_channels
 

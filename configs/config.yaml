@@ -5,6 +5,8 @@ trainer:
     init_args:
       project: PhysionetMotorImagery
   max_epochs: -1
+  limit_train_batches: 250
+  limit_val_batches: 50
 model:
   class_path: eegformer.models.Transformer
   init_args:
@@ -13,10 +15,10 @@ model:
     n_head: 8
     hidden_layer_multiplier: 4
     learning_rate: 1e-3
-    weight_decay: 0.1
+    weight_decay: 0.05
     dropout: 0.2
     warmup_steps: 1000
-    lr_decay_steps: 10000
+    lr_decay_steps: 100000
     input_dim: 160
 data:
   dataclass: eegformer.datasets.PhysionetMotorImagery
@@ -26,6 +28,8 @@ data:
   preprocessing:
     epoch_length: 1
     epoch_overlap: 0
+    low_pass: 60
+    high_pass: 1
     n_jobs: -1
   batch_size: 4096
   num_workers: 24
