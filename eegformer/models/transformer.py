@@ -1,4 +1,5 @@
 import math
+from typing import Optional
 
 import lightning.pytorch as pl
 import matplotlib
@@ -110,13 +111,24 @@ class Transformer(pl.LightningModule):
 
         return [optimizer], [scheduler]
 
-    def forward(self, x, ch_pos):
+    def forward(self, x: torch.Tensor, ch_pos: torch.Tensor, mask: Optional[torch.Tensor] = None):
+        """
+        Forward pass of the model.
+
+        ### Args
+            - `x` (Tensor): tensor of raw EEG signals (batch, channels, time)
+            - `ch_pos` (Tensor): tensor of channel positions (batch, channels, 3)
+            - `mask` (Tensor): optional attention mask (batch, channels)
+
+        """
+        # normalize the signal
         if self.hparams.z_transform:
             x = (x - x.mean(dim=-1, keepdims=True)) / (x.std(dim=-1, keepdims=True) + 1e-8)
 
+        # forward pass of the Transformer
         x = self.signal_embed(x)
-        x = self.pos_embed(x, ch_pos)
-        x = self.model(x)
+        x, mask = self.pos_embed(x, ch_pos, mask=mask)
+        x = self.model(x, encoder_input_mask=mask)
 
         # extract the class token
         x = x[:, 0]
@@ -126,8 +138,8 @@ class Transformer(pl.LightningModule):
         return x
 
     def evaluate(self, batch, stage=None):
-        signal, ch_pos, y = batch
-        y_hat = self(signal, ch_pos)
+        signal, ch_pos, mask, y = batch
+        y_hat = self(signal, ch_pos, mask=mask)
 
         loss = F.cross_entropy(y_hat, y, weight=self.class_weights)
 

@@ -259,15 +259,3 @@ class PhysionetMotorImagery(Dataset):
 
     def idx2label(self, idx: int) -> str:
         return PhysionetMotorImageryTask.get_labels(self.task)[idx]
-
-
-if __name__ == "__main__":
-    ds = PhysionetMotorImagery(
-        "~/data",
-        PhysionetMotorImageryTask.BASELINE,
-        PreprocessingConfig(n_jobs=-1),
-        # subjects=list(range(1, 6)),
-    )
-
-    print(ds)
-    print(ds.class_weights)

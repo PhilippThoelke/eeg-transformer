@@ -2,6 +2,7 @@ from abc import ABC
 from typing import List, Optional, Tuple
 
 import torch
+from torch import Tensor
 
 
 class BaseTransform(ABC):
@@ -9,7 +10,16 @@ class BaseTransform(ABC):
     Base class for all transforms.
     """
 
-    def __call__(self, args: Tuple[torch.Tensor, torch.Tensor, int]) -> Tuple[torch.Tensor, torch.Tensor, int]:
+    def __call__(self, args: Tuple[Tensor, Tensor, int]) -> Tuple[Tensor, Tensor, int]:
+        """
+        Apply the transform to the input arguments.
+
+        ### Args
+            - `args` (Tuple[Tensor, Tensor, int]): A tuple of (signal, ch_pos, label).
+
+        ### Returns
+            Tuple[Tensor, Tensor, int]: The transformed tuple of (signal, ch_pos, label).
+        """
         raise NotImplementedError
 
 
@@ -24,10 +34,14 @@ class Compose(BaseTransform):
 
     def __init__(self, transforms: List[BaseTransform], max_transforms: Optional[int] = None):
         self.transforms = transforms
+        if max_transforms is None:
+            max_transforms = len(transforms)
+        self.max_transforms = min(max_transforms, len(transforms))
 
-    def __call__(self, args: Tuple[torch.Tensor, torch.Tensor, int]) -> Tuple[torch.Tensor, torch.Tensor, int]:
-        for transform in self.transforms:
-            args = transform(args)
+    def __call__(self, args: Tuple[Tensor, Tensor, int]) -> Tuple[Tensor, Tensor, int]:
+        idxs = torch.randperm(len(self.transforms))[: self.max_transforms]
+        for i in idxs:
+            args = self.transforms[i](args)
         return args
 
 
@@ -47,7 +61,7 @@ class RandomAmplitudeScaleShift(BaseTransform):
         self.std_scale = std_scale
         self.channelwise = channelwise
 
-    def __call__(self, args: Tuple[torch.Tensor, torch.Tensor, int]) -> Tuple[torch.Tensor, torch.Tensor, int]:
+    def __call__(self, args: Tuple[Tensor, Tensor, int]) -> Tuple[Tensor, Tensor, int]:
         signal, ch_pos, label = args
         if self.channelwise:
             shift = torch.randn(signal.shape[0], 1) * signal.std() * self.std_shift
@@ -70,7 +84,7 @@ class RandomTimeShift(BaseTransform):
     def __init__(self, std=3.0):
         self.std = std
 
-    def __call__(self, args: Tuple[torch.Tensor, torch.Tensor, int]) -> Tuple[torch.Tensor, torch.Tensor, int]:
+    def __call__(self, args: Tuple[Tensor, Tensor, int]) -> Tuple[Tensor, Tensor, int]:
         signal, ch_pos, label = args
         shift = torch.randn(1) * self.std
         shift = int(shift.item())
@@ -89,7 +103,7 @@ class GaussianNoiseSignal(BaseTransform):
     def __init__(self, std=0.1):
         self.std = std
 
-    def __call__(self, args: Tuple[torch.Tensor, torch.Tensor, int]) -> Tuple[torch.Tensor, torch.Tensor, int]:
+    def __call__(self, args: Tuple[Tensor, Tensor, int]) -> Tuple[Tensor, Tensor, int]:
         signal, ch_pos, label = args
         return signal + (torch.randn_like(signal) * signal.std() * self.std), ch_pos, label
 
@@ -106,7 +120,7 @@ class GaussianNoiseChannelPos(BaseTransform):
     def __init__(self, std=0.08):
         self.std = std
 
-    def __call__(self, args: Tuple[torch.Tensor, torch.Tensor, int]) -> Tuple[torch.Tensor, torch.Tensor, int]:
+    def __call__(self, args: Tuple[Tensor, Tensor, int]) -> Tuple[Tensor, Tensor, int]:
         signal, ch_pos, label = args
         return signal, ch_pos + (torch.randn_like(ch_pos) * ch_pos.std() * self.std), label
 
@@ -122,7 +136,7 @@ class FourierNoise(BaseTransform):
     def __init__(self, std=0.5):
         self.std = std
 
-    def __call__(self, args: Tuple[torch.Tensor, torch.Tensor, int]) -> Tuple[torch.Tensor, torch.Tensor, int]:
+    def __call__(self, args: Tuple[Tensor, Tensor, int]) -> Tuple[Tensor, Tensor, int]:
         signal, ch_pos, label = args
         ft = torch.fft.fft(signal, dim=1)
         ft = ft + (torch.randn_like(ft) * ft.std(dim=0, keepdims=True) * self.std)
@@ -140,7 +154,7 @@ class RandomPhase(BaseTransform):
     def __init__(self, strength=0.3):
         self.strength = strength
 
-    def __call__(self, args: Tuple[torch.Tensor, torch.Tensor, int]) -> Tuple[torch.Tensor, torch.Tensor, int]:
+    def __call__(self, args: Tuple[Tensor, Tensor, int]) -> Tuple[Tensor, Tensor, int]:
         signal, ch_pos, label = args
         # transform the data into frequency domain
         ft = torch.fft.fft(signal.T, dim=0)
@@ -158,3 +172,27 @@ class RandomPhase(BaseTransform):
         # transform back into the time domain
         signal = torch.fft.ifft(ft * (random_phase * self.strength).exp(), dim=0).real.T
         return signal, ch_pos, label
+
+
+class ChannelDropout(BaseTransform):
+    """
+    Randomly drop channels from the signal.
+
+    ### Args
+        - `p` (float): The probability of dropping a channel.
+        - `min_channels` (int): The minimum number of channels to keep.
+    """
+
+    def __init__(self, p=0.2, min_channels=4):
+        self.p = p
+        self.min_channels = min_channels
+
+    def __call__(self, args: Tuple[Tensor, Tensor, int]) -> Tuple[Tensor, Tensor, int]:
+        signal, ch_pos, label = args
+        # generate a mask of channels to keep
+        keep_mask = torch.rand(signal.shape[0]) > self.p
+        # make sure we keep at least `min_channels` channels
+        if keep_mask.sum() < self.min_channels:
+            keep_mask[torch.randperm(signal.shape[0])[: self.min_channels]] = True
+        # return the data with the dropped channels
+        return signal[keep_mask], ch_pos[keep_mask], label

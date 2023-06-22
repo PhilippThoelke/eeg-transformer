@@ -172,7 +172,7 @@ class DataModule(pl.LightningDataModule):
         """
         data = self.train_data.map(self.augmentations) if self.augmentations else self.train_data
         return WebLoader(
-            data.shuffle(1000).batched(self.batch_size),
+            data.shuffle(1000).batched(self.batch_size, collation_fn=self.train_data.collate_fn),
             batch_size=None,
             num_workers=self.num_workers,
             pin_memory=True,
@@ -183,7 +183,7 @@ class DataModule(pl.LightningDataModule):
         Return the training dataloader.
         """
         return WebLoader(
-            self.val_data.batched(self.batch_size),
+            self.val_data.batched(self.batch_size, collation_fn=self.val_data.collate_fn),
             batch_size=None,
             num_workers=self.num_workers,
             pin_memory=True,
@@ -194,7 +194,7 @@ class DataModule(pl.LightningDataModule):
         Return the training dataloader.
         """
         return WebLoader(
-            self.test_data.batched(self.batch_size),
+            self.test_data.batched(self.batch_size, collation_fn=self.test_data.collate_fn),
             batch_size=None,
             num_workers=self.num_workers,
             pin_memory=True,

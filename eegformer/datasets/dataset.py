@@ -1,7 +1,7 @@
 import os
 from abc import ABC, abstractmethod, abstractstaticmethod
 from os.path import abspath, exists, expanduser, join
-from typing import List
+from typing import List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -90,6 +90,27 @@ class Dataset(wds.WebDataset, ABC):
             labels = np.concatenate([lbl[0] for lbl in tqdm(dl, desc="Computing class weights")])
             self._class_weights = compute_class_weight("balanced", classes=np.unique(labels), y=labels)
             self._class_weights = torch.from_numpy(self._class_weights).float()
+
+    @staticmethod
+    def collate_fn(samples) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor], torch.Tensor]:
+        assert isinstance(samples[0], (list, tuple)), f"samples must be a list or tuple, got {type(samples[0])}"
+        signal, ch_pos, label = zip(*samples)
+
+        # get the number of channels in each sample
+        sizes = torch.tensor([s.size(0) for s in signal])
+        if sizes.min() == sizes.max():
+            # all samples have the same number of channels, we don't need to pad or create a mask
+            signal = torch.stack(signal)
+            ch_pos = torch.stack(ch_pos)
+            label = torch.tensor(label)
+            return signal, ch_pos, None, label
+
+        # pad the samples to the same channel count and create a mask
+        signal = torch.nn.utils.rnn.pad_sequence(signal, batch_first=True)
+        ch_pos = torch.nn.utils.rnn.pad_sequence(ch_pos, batch_first=True)
+        mask = torch.arange(signal.size(1)).expand(signal.size(0), -1) < sizes.unsqueeze(1)
+        label = torch.tensor(label)
+        return signal, ch_pos, mask, label
 
     @abstractstaticmethod
     def subject_ids() -> List[int]:
