@@ -15,8 +15,8 @@ model:
     learning_rate: 1e-3
     weight_decay: 0.1
     dropout: 0.2
-    warmup_steps: 2000
-    lr_decay_steps: 50000
+    warmup_steps: 1000
+    lr_decay_steps: 10000
     input_dim: 160
 data:
   dataclass: eegformer.datasets.PhysionetMotorImagery
@@ -27,7 +27,7 @@ data:
     epoch_length: 1
     epoch_overlap: 0
     n_jobs: -1
-  batch_size: 2048
+  batch_size: 4096
   num_workers: 24
   augmentations:
     class_path: eegformer.augmentations.Compose
