@@ -56,7 +56,7 @@ class RandomAmplitudeScaleShift(BaseTransform):
         - `channelwise` (bool): Whether to apply the same scale and shift to all channels.
     """
 
-    def __init__(self, std_shift=0.1, std_scale=0.1, channelwise=True):
+    def __init__(self, std_shift=0.075, std_scale=0.2, channelwise=True):
         self.std_shift = std_shift
         self.std_scale = std_scale
         self.channelwise = channelwise
@@ -74,21 +74,27 @@ class RandomAmplitudeScaleShift(BaseTransform):
 
 class RandomTimeShift(BaseTransform):
     """
-    Randomly shift the signal in time by a number of samples. Time points that are shifted beyond the signal length
-    are wrapped around to the beginning of the signal.
+    Randomly shift the signal in time by a number of samples. The signal is padded with zeros.
 
     ### Args
         - `std` (float): Standard deviation of the random time shift (in samples).
     """
 
-    def __init__(self, std=3.0):
+    def __init__(self, std=6.0):
         self.std = std
 
     def __call__(self, args: Tuple[Tensor, Tensor, int]) -> Tuple[Tensor, Tensor, int]:
         signal, ch_pos, label = args
         shift = torch.randn(1) * self.std
         shift = int(shift.item())
-        return torch.roll(signal, shift, dims=1), ch_pos, label
+        # shift the signal
+        signal = torch.roll(signal, shift, dims=1)
+        # pad the signal
+        if shift > 0:
+            signal[:, :shift] = 0
+        elif shift < 0:
+            signal[:, shift:] = 0
+        return signal, ch_pos, label
 
 
 class GaussianNoiseSignal(BaseTransform):
@@ -100,7 +106,7 @@ class GaussianNoiseSignal(BaseTransform):
         - `std` (float): The standard deviation of the Gaussian distribution.
     """
 
-    def __init__(self, std=0.1):
+    def __init__(self, std=0.05):
         self.std = std
 
     def __call__(self, args: Tuple[Tensor, Tensor, int]) -> Tuple[Tensor, Tensor, int]:
@@ -117,7 +123,7 @@ class GaussianNoiseChannelPos(BaseTransform):
         - `std` (float): The standard deviation of the Gaussian distribution.
     """
 
-    def __init__(self, std=0.08):
+    def __init__(self, std=0.05):
         self.std = std
 
     def __call__(self, args: Tuple[Tensor, Tensor, int]) -> Tuple[Tensor, Tensor, int]:
@@ -133,13 +139,15 @@ class FourierNoise(BaseTransform):
         - `std` (float): The standard deviation of the Gaussian distribution.
     """
 
-    def __init__(self, std=0.5):
+    def __init__(self, std=0.09):
         self.std = std
 
     def __call__(self, args: Tuple[Tensor, Tensor, int]) -> Tuple[Tensor, Tensor, int]:
         signal, ch_pos, label = args
         ft = torch.fft.fft(signal, dim=1)
-        ft = ft + (torch.randn_like(ft) * ft.std(dim=0, keepdims=True) * self.std)
+        noise = torch.randn_like(ft)
+        noise = noise + noise * 1j
+        ft = ft + noise * ft.std() * self.std
         return torch.fft.ifft(ft, dim=1).real, ch_pos, label
 
 
@@ -183,7 +191,7 @@ class ChannelDropout(BaseTransform):
         - `min_channels` (int): The minimum number of channels to keep.
     """
 
-    def __init__(self, p=0.5, min_channels=4):
+    def __init__(self, p=0.3, min_channels=8):
         self.p = p
         self.min_channels = min_channels
 
@@ -196,3 +204,47 @@ class ChannelDropout(BaseTransform):
             keep_mask[torch.randperm(signal.shape[0])[: self.min_channels]] = True
         # return the data with the dropped channels
         return signal[keep_mask], ch_pos[keep_mask], label
+
+
+class TemporalDropout(BaseTransform):
+    """
+    Randomly set chunks of the signal to zero.
+
+    ### Args
+        - `p` (float): The probability of dropping a chunk.
+        - `max_chunk_size` (int): The maximum size of a chunk to drop.
+    """
+
+    def __init__(self, p=0.3, max_chunk_size=30):
+        self.p = p
+        self.max_chunk_size = max_chunk_size
+
+    def __call__(self, args: Tuple[Tensor, Tensor, int]) -> Tuple[Tensor, Tensor, int]:
+        signal, ch_pos, label = args
+        affected_channels = torch.rand(signal.shape[0]) < self.p
+
+        for i in torch.where(affected_channels)[0]:
+            chunk_size = torch.randint(1, self.max_chunk_size, (1,)).item()
+            chunk_start = torch.randint(0, signal.shape[1] - chunk_size, (1,)).item()
+            signal[i, chunk_start : chunk_start + chunk_size] = 0
+        return signal, ch_pos, label
+
+
+class FlipSign(BaseTransform):
+    """
+    Flip the sign of the signal (all channels).
+    """
+
+    def __call__(self, args: Tuple[Tensor, Tensor, int]) -> Tuple[Tensor, Tensor, int]:
+        signal, ch_pos, label = args
+        return -signal, ch_pos, label
+
+
+class ReverseSignal(BaseTransform):
+    """
+    Reverse the signal (all channels).
+    """
+
+    def __call__(self, args: Tuple[Tensor, Tensor, int]) -> Tuple[Tensor, Tensor, int]:
+        signal, ch_pos, label = args
+        return signal.flip(dims=(1,)), ch_pos, label
