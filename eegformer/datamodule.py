@@ -115,7 +115,7 @@ class DataModule(pl.LightningDataModule):
         # configure dataset kwargs
         dataset_kwargs["preprocessing"] = preprocessing
         dataset_kwargs = load_dataset_kwargs(
-            self.dataclass, dataset_kwargs, exclude=["subjects", "compute_data_metrics"]
+            self.dataclass, dataset_kwargs, exclude=["subjects", "compute_class_weights"]
         )
         self.dataset_kwargs = dataset_kwargs
 
@@ -144,20 +144,6 @@ class DataModule(pl.LightningDataModule):
         return self.dataclass.num_classes(**self.dataset_kwargs)
 
     @property
-    def signal_mean(self) -> float:
-        """
-        Return the mean of the signal.
-        """
-        return self.train_data.signal_mean
-
-    @property
-    def signal_std(self) -> float:
-        """
-        Return the standard deviation of the signal.
-        """
-        return self.train_data.signal_std
-
-    @property
     def class_weights(self):
         """
         Return the training set class weights.
@@ -170,7 +156,7 @@ class DataModule(pl.LightningDataModule):
         """
         if stage == "fit":
             self.train_data = self.dataclass(
-                subjects=self.train_subjects, compute_data_metrics=True, **self.dataset_kwargs
+                subjects=self.train_subjects, compute_class_weights=True, **self.dataset_kwargs
             )
             self.val_data = self.dataclass(subjects=self.val_subjects, **self.dataset_kwargs)
             self.test_data = self.dataclass(subjects=self.test_subjects, **self.dataset_kwargs)

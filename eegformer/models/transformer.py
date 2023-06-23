@@ -37,6 +37,7 @@ class Transformer(pl.LightningModule):
         dropout: float = 0.0,
         num_classes: int = None,
         raw_batchnorm: bool = True,
+        detrend_samples: int = 0,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -86,10 +87,6 @@ class Transformer(pl.LightningModule):
             nn.GELU(),
             nn.Linear(model_dim // 2, num_classes),
         )
-
-        # initialize dataset metrics
-        self.signal_mean = None
-        self.signal_std = None
 
         # initialize class weights
         self.class_weights = None
@@ -155,8 +152,13 @@ class Transformer(pl.LightningModule):
             - `mask` (Tensor): optional attention mask (batch, channels)
 
         """
-        # normalize the raw signal using the mean and std of the training set
-        x = (x - self.signal_mean) / self.signal_std
+        # detrend the signal
+        if self.hparams.detrend_samples:
+            kernel_size = self.hparams.detrend_samples
+            padded_x = F.pad(x, (kernel_size // 2, kernel_size // 2), mode="replicate")
+            detrend_kernel = torch.ones(1, 1, kernel_size, device=self.device) / kernel_size
+            trend = torch.conv1d(padded_x.reshape(-1, 1, padded_x.size(-1)), detrend_kernel).reshape(x.shape)
+            x = x - trend
 
         # apply batchnorm to the raw signal
         if self.hparams.raw_batchnorm:
@@ -201,12 +203,9 @@ class Transformer(pl.LightningModule):
         self.evaluate(batch, "test")
 
     def on_fit_start(self):
+        # acquire class weights from the datamodule
         if self.class_weights is None:
             self.class_weights = self.trainer.datamodule.class_weights.to(self.device)
-        if self.signal_mean is None:
-            self.signal_mean = self.trainer.datamodule.signal_mean
-        if self.signal_std is None:
-            self.signal_std = self.trainer.datamodule.signal_std
 
     def on_train_epoch_start(self):
         self.initialize_labels()
