@@ -38,8 +38,10 @@ class Dataset(wds.WebDataset, ABC):
         - `root`: The root directory of the dataset.
         - `preprocessing`: The preprocessing configuration.
         - `subjects`: The subjects to use. If `None`, all subjects are used.
-        - `compute_class_weights`: Whether to compute class weights for the dataset, !!! currently
+        - `compute_data_stats`: Whether to compute data statistics for the dataset, !!! currently
             very computationally expensive !!!
+        - `compute_data_metrics`: Whether to compute data metrics (mean, std, class weights) for
+            the dataset, !!! currently very computationally expensive !!!
     """
 
     def __init__(
@@ -47,7 +49,7 @@ class Dataset(wds.WebDataset, ABC):
         root: str,
         preprocessing: PreprocessingConfig = None,
         subjects: List[int] = None,
-        compute_class_weights: bool = False,
+        compute_data_metrics: bool = False,
     ):
         self._root = abspath(expanduser(join(root, self.__class__.__name__)))
         self.preprocessing = PreprocessingConfig() if preprocessing is None else preprocessing
@@ -79,15 +81,27 @@ class Dataset(wds.WebDataset, ABC):
 
         # compute class weights
         self._class_weights = None
-        if compute_class_weights:
+        self._signal_mean = None
+        self._signal_std = None
+        if compute_data_metrics:
             ##############################################################################
             # TODO: optimize this, it's currently very slow to iterate the whole dataset #
             ##############################################################################
             import joblib
 
-            ds = wds.WebDataset(shards).to_tuple("label.cls").map_tuple(lambda x: int(x)).batched(128)
+            # iterate dataset and extract signal mean, std and labels
+            ds = wds.WebDataset(shards).decode().to_tuple("signal.npy", "label.cls").batched(128)
             dl = wds.WebLoader(ds, batch_size=None, shuffle=False, num_workers=joblib.cpu_count())
-            labels = np.concatenate([lbl[0] for lbl in tqdm(dl, desc="Computing class weights")])
+            means, stds, labels = tuple(
+                zip(*[(sig.mean(), sig.std(), lbl) for sig, lbl in tqdm(dl, desc="Computing dataset metrics")])
+            )
+
+            # compute mean and std
+            self._signal_mean = np.mean(means)
+            self._signal_std = np.mean(stds)
+
+            # compute class weights
+            labels = np.concatenate(labels)
             self._class_weights = compute_class_weight("balanced", classes=np.unique(labels), y=labels)
             self._class_weights = torch.from_numpy(self._class_weights).float()
 
@@ -151,6 +165,20 @@ class Dataset(wds.WebDataset, ABC):
         Converts an index to a class name.
         """
         return NotImplemented
+
+    @property
+    def signal_mean(self) -> float:
+        """
+        Mean of the signal for the dataset.
+        """
+        return self._signal_mean
+
+    @property
+    def signal_std(self) -> float:
+        """
+        Standard deviation of the signal for the dataset.
+        """
+        return self._signal_std
 
     @property
     def class_weights(self) -> torch.Tensor:

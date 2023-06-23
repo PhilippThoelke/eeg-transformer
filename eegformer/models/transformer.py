@@ -87,6 +87,10 @@ class Transformer(pl.LightningModule):
             nn.Linear(model_dim // 2, num_classes),
         )
 
+        # initialize dataset metrics
+        self.signal_mean = None
+        self.signal_std = None
+
         # initialize class weights
         self.class_weights = None
 
@@ -151,8 +155,11 @@ class Transformer(pl.LightningModule):
             - `mask` (Tensor): optional attention mask (batch, channels)
 
         """
+        # normalize the raw signal using the mean and std of the training set
+        x = (x - self.signal_mean) / self.signal_std
+
+        # apply batchnorm to the raw signal
         if self.hparams.raw_batchnorm:
-            # normalize the raw signal
             x = self.raw_norm(x.permute(0, 2, 1)).permute(0, 2, 1)
 
         # embed the raw signal
@@ -193,11 +200,16 @@ class Transformer(pl.LightningModule):
     def test_step(self, batch, _):
         self.evaluate(batch, "test")
 
+    def on_fit_start(self):
+        if self.class_weights is None:
+            self.class_weights = self.trainer.datamodule.class_weights.to(self.device)
+        if self.signal_mean is None:
+            self.signal_mean = self.trainer.datamodule.signal_mean
+        if self.signal_std is None:
+            self.signal_std = self.trainer.datamodule.signal_std
+
     def on_train_epoch_start(self):
         self.initialize_labels()
-
-        if self.class_weights is None:
-            self.class_weights = self.trainer.datamodule.class_weights("train").to(self.device)
 
     def on_train_epoch_end(self):
         self.log_confusion_matrix("train")

@@ -196,10 +196,9 @@ class PhysionetMotorImagery(Dataset):
     ### Args
         - `root` (str): The path to the dataset.
         - `task` (PhysionetMotorImageryTask): The task to preprocess.
-        - `preprocessing` (PreprocessingConfig): The preprocessing configuration.
         - `subjects` (List[int]): The subjects to use. If `None`, all subjects are used.
         - `exclude_problematic` (bool): Whether to exclude problematic subjects (88, 89, 92, 100, 104, 106).
-        - `compute_class_weights` (bool): Whether to compute class weights for the dataset.
+        - `**kwargs`: Additional arguments to pass to the `Dataset` constructor.
     """
 
     PROBLEMATIC_SUBJECTS = [88, 89, 92, 100, 104, 106]
@@ -208,10 +207,9 @@ class PhysionetMotorImagery(Dataset):
         self,
         root: str,
         task: PhysionetMotorImageryTask = PhysionetMotorImageryTask.ALL,
-        preprocessing: PreprocessingConfig = None,
         subjects: List[int] = None,
         exclude_problematic: bool = True,
-        compute_class_weights: bool = False,
+        **kwargs,
     ):
         if isinstance(task, str):
             self.task = getattr(PhysionetMotorImageryTask, task)
@@ -227,7 +225,7 @@ class PhysionetMotorImagery(Dataset):
             )
 
         # initialize the dataset
-        super().__init__(root, preprocessing, subjects, compute_class_weights)
+        super().__init__(root, subjects=subjects, **kwargs)
 
     @staticmethod
     def subject_ids(exclude_problematic: bool, **kwargs) -> List[int]:
