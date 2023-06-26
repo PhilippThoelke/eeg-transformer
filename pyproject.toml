@@ -2,10 +2,6 @@
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["eegformer.*"]
-
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
 
