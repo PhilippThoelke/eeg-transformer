@@ -1,6 +1,6 @@
 from enum import Flag
 from os.path import exists, join
-from typing import List
+from typing import List, Union
 
 import mne
 import webdataset as wds
@@ -27,16 +27,38 @@ class PhysionetMotorImageryTask(Flag):
     )
 
     @staticmethod
-    def get_runs(task) -> List[int]:
+    def parse_task(task: Union[str, "PhysionetMotorImageryTask"]) -> "PhysionetMotorImageryTask":
+        """
+        Parses a task from a string where multiple tasks can be combined with a `|`.
+
+        ### Args
+            - `task` (Union[str, PhysionetMotorImageryTask]): The task at hand.
+
+        ### Returns
+            PhysionetMotorImageryTask: The parsed task.
+        """
+        if isinstance(task, PhysionetMotorImageryTask):
+            return task
+
+        tasks = [getattr(PhysionetMotorImageryTask, t.strip()) for t in task.split("|")]
+        result = tasks[0]
+        for task in tasks[1:]:
+            result |= task
+        return result
+
+    @staticmethod
+    def get_runs(task: Union[str, "PhysionetMotorImageryTask"]) -> List[int]:
         """
         Returns a list of runs for the given task.
 
-        ### Args:
-            - `task` (PhysionetMotorImageryTask): The task at hand.
+        ### Args
+            - `task` (Union[str, PhysionetMotorImageryTask]): The task at hand.
 
-        ### Returns:
+        ### Returns
             List[int]: The list of runs.
         """
+        task = PhysionetMotorImageryTask.parse_task(task)
+
         runs = []
         if (task & PhysionetMotorImageryTask.BASELINE).value > 0:
             runs += [1, 2]
@@ -51,16 +73,19 @@ class PhysionetMotorImageryTask(Flag):
         return runs
 
     @staticmethod
-    def get_labels(task) -> List[str]:
+    def get_labels(task: Union[str, "PhysionetMotorImageryTask"], combine_exec_imag: bool) -> List[str]:
         """
         Returns a list of labels for the given task.
 
         ### Args:
-            - `task` (PhysionetMotorImageryTask): The task at hand.
+            - `task` (Union[str, PhysionetMotorImageryTask]): The task at hand.
+            - `combine_exec_imag` (bool): Whether to combine execution and imagery labels.
 
         ### Returns:
             List[str]: The list of labels.
         """
+        task = PhysionetMotorImageryTask.parse_task(task)
+
         labels = []
         if (task & PhysionetMotorImageryTask.BASELINE).value > 0:
             labels += ["baseline_open", "baseline_closed"]
@@ -72,7 +97,12 @@ class PhysionetMotorImageryTask(Flag):
             labels += ["imagery_left", "imagery_right"]
         if (task & PhysionetMotorImageryTask.MOTOR_IMAGERY_HANDS_FEET).value > 0:
             labels += ["imagery_hands", "imagery_feet"]
-        return sorted(labels)
+
+        if combine_exec_imag:
+            labels = [label.replace("execution", "motor") for label in labels]
+            labels = [label.replace("imagery", "motor") for label in labels]
+
+        return sorted(set(labels))
 
 
 # maps (run, annot) to a string label
@@ -115,6 +145,7 @@ def preprocess_subject(
     raw_path: str,
     processed_path: str,
     task: PhysionetMotorImageryTask,
+    combine_exec_imag: bool,
     config: PreprocessingConfig,
 ) -> str:
     """
@@ -125,6 +156,7 @@ def preprocess_subject(
         - `raw_path` (str): Path to the raw data.
         - `processed_path` (str): Path to the processed data.
         - `task` (PhysionetMotorImageryTask): The task to preprocess.
+        - `combine_exec_imag` (bool): Whether to combine execution and imagery labels.
         - `config` (PreprocessingConfig): The preprocessing configuration.
 
     ### Returns
@@ -172,7 +204,11 @@ def preprocess_subject(
 
             # assemble sample
             ch_pos = extract_ch_pos(raw_segment)
-            label = PhysionetMotorImageryTask.get_labels(task).index(LABEL_MAPPING[label_key])
+
+            label = LABEL_MAPPING[label_key]
+            if combine_exec_imag:
+                label = label.replace("execution", "motor").replace("imagery", "motor")
+            label = PhysionetMotorImageryTask.get_labels(task, combine_exec_imag).index(label)
 
             # save epochs
             for epoch in epochs:
@@ -198,6 +234,7 @@ class PhysionetMotorImagery(Dataset):
         - `task` (PhysionetMotorImageryTask): The task to preprocess.
         - `subjects` (List[int]): The subjects to use. If `None`, all subjects are used.
         - `exclude_problematic` (bool): Whether to exclude problematic subjects (88, 89, 92, 100, 104, 106).
+        - `combine_exec_imag` (bool): Whether to combine execution and imagery tasks.
         - `**kwargs`: Additional arguments to pass to the `Dataset` constructor.
     """
 
@@ -209,12 +246,11 @@ class PhysionetMotorImagery(Dataset):
         task: PhysionetMotorImageryTask = PhysionetMotorImageryTask.ALL,
         subjects: List[int] = None,
         exclude_problematic: bool = True,
+        combine_exec_imag: bool = False,
         **kwargs,
     ):
-        if isinstance(task, str):
-            self.task = getattr(PhysionetMotorImageryTask, task)
-        else:
-            self.task = task
+        self.task = PhysionetMotorImageryTask.parse_task(task)
+        self.combine_exec_imag = combine_exec_imag
 
         # get a list of subjects and make sure they are not problematic
         subjects = subjects or PhysionetMotorImagery.subject_ids(exclude_problematic=exclude_problematic)
@@ -234,10 +270,8 @@ class PhysionetMotorImagery(Dataset):
         return list(range(1, 110))
 
     @staticmethod
-    def num_classes(task: PhysionetMotorImageryTask, **kwargs) -> int:
-        if isinstance(task, str):
-            task = getattr(PhysionetMotorImageryTask, task)
-        return len(PhysionetMotorImageryTask.get_labels(task))
+    def num_classes(task: Union[str, PhysionetMotorImageryTask], **kwargs) -> int:
+        return len(PhysionetMotorImageryTask.get_labels(task, kwargs["combine_exec_imag"]))
 
     def list_shards(self) -> List[str]:
         # list all shards for the given task
@@ -246,12 +280,14 @@ class PhysionetMotorImagery(Dataset):
     def prepare_data(self):
         # download and preprocess the dataset and store epochs as WebDataset shards (one shard per subject)
         Parallel(n_jobs=self.preprocessing.n_jobs)(
-            delayed(preprocess_subject)(sub, self.raw_path, self.processed_path, self.task, self.preprocessing)
+            delayed(preprocess_subject)(
+                sub, self.raw_path, self.processed_path, self.task, self.combine_exec_imag, self.preprocessing
+            )
             for sub in tqdm(self.subjects, desc="Preprocessing data")
         )
 
     def label2idx(self, label: str) -> int:
-        return PhysionetMotorImageryTask.get_labels(self.task).index(label)
+        return PhysionetMotorImageryTask.get_labels(self.task, self.combine_exec_imag).index(label)
 
     def idx2label(self, idx: int) -> str:
-        return PhysionetMotorImageryTask.get_labels(self.task)[idx]
+        return PhysionetMotorImageryTask.get_labels(self.task, self.combine_exec_imag)[idx]
