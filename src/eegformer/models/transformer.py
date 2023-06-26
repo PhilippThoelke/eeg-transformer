@@ -37,7 +37,6 @@ class Transformer(pl.LightningModule):
         dropout: float = 0.0,
         num_classes: int = None,
         raw_batchnorm: bool = True,
-        detrend_samples: int = 0,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -152,14 +151,6 @@ class Transformer(pl.LightningModule):
             - `mask` (Tensor): optional attention mask (batch, channels)
 
         """
-        # detrend the signal
-        if self.hparams.detrend_samples:
-            kernel_size = self.hparams.detrend_samples
-            padded_x = F.pad(x, (kernel_size // 2, kernel_size // 2), mode="replicate")
-            detrend_kernel = torch.ones(1, 1, kernel_size, device=self.device) / kernel_size
-            trend = torch.conv1d(padded_x.reshape(-1, 1, padded_x.size(-1)), detrend_kernel).reshape(x.shape)
-            x = x - trend
-
         # apply batchnorm to the raw signal
         if self.hparams.raw_batchnorm:
             x = self.raw_norm(x.permute(0, 2, 1)).permute(0, 2, 1)
