@@ -1,10 +1,13 @@
 import hashlib
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import mne
 import numpy as np
+import torch
+from jsonargparse import Namespace
 from mne.io import Raw
+from torch import Tensor
 
 
 @dataclass
@@ -111,3 +114,40 @@ def extract_ch_pos(raw: Raw) -> np.ndarray:
     ch_pos = montage.get_positions()["ch_pos"]
     ch_pos = np.array([ch_pos[ch] for ch in raw.ch_names], dtype=np.float32)
     return ch_pos
+
+
+def subsample_signal_batch(
+    batch: Tuple[Tensor, Tensor, Optional[Tensor], Tensor], hparams: Namespace
+) -> Tuple[Tensor, Tensor, Optional[Tensor], Tensor]:
+    """
+    Subsample the time dimension of a batch of signals and concatenate the resulting signals.
+
+    ### Args
+        - `batch` (Tuple[Tensor, Tensor, Optional[Tensor], Tensor]): The batch of signals.
+        - `hparams` (Namespace): The hyperparameters, must contain `input_dim` and `similarity_subsamples`.
+
+    ### Returns
+        Tuple[Tensor, Tensor, Optional[Tensor], Tensor]: The subsampled batch.
+    """
+    signal, ch_pos, mask, y = batch
+
+    # checks
+    assert "input_dim" in hparams, "hparams must contain input_dim"
+    assert "similarity_subsamples" in hparams, "hparams must contain similarity_subsamples"
+    assert signal.size(2) > (
+        hparams.input_dim + hparams.similarity_subsamples - 1
+    ), "Signal must be longer than input_dim + similarity_subsamples - 1"
+
+    # subsample the signal
+    signals = []
+    start_idxs = np.linspace(0, signal.size(2) - hparams.input_dim, hparams.similarity_subsamples, dtype=int)
+    for i in start_idxs:
+        signals.append(signal[:, :, i : i + hparams.input_dim])
+
+    # concatenate and reassemble the batch
+    signal = torch.cat(signals, dim=0)
+    ch_pos = ch_pos.repeat(hparams.similarity_subsamples, 1, 1)
+    if mask is not None:
+        mask = mask.repeat(hparams.similarity_subsamples, 1)
+    y = y.repeat(hparams.similarity_subsamples)
+    return signal, ch_pos, mask, y

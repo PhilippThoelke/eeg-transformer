@@ -3,6 +3,7 @@ from typing import Optional
 
 import lightning.pytorch as pl
 import matplotlib
+import numpy as np
 import torch
 import torch.nn.functional as F
 
@@ -13,6 +14,7 @@ from torch import nn
 from xformers.factory import xFormer, xFormerConfig
 
 from eegformer.models.utils import MLP3DPositionalEmbedding
+from eegformer.utils import subsample_signal_batch
 
 
 class Transformer(pl.LightningModule):
@@ -35,8 +37,10 @@ class Transformer(pl.LightningModule):
         lr_cycle_steps: int = 5000,
         weight_decay: float = 0.0,
         dropout: float = 0.0,
-        num_classes: int = None,
+        similarity_subsamples: int = 0,
+        similarity_loss_weight: float = 0.1,
         raw_batchnorm: bool = True,
+        num_classes: int = None,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -80,8 +84,8 @@ class Transformer(pl.LightningModule):
         self.model = xFormer.from_config(config)
 
         # classifier head
+        self.ln = nn.LayerNorm(model_dim)
         self.head = nn.Sequential(
-            nn.LayerNorm(model_dim),
             nn.Linear(model_dim, model_dim // 2),
             nn.GELU(),
             nn.Linear(model_dim // 2, num_classes),
@@ -141,7 +145,9 @@ class Transformer(pl.LightningModule):
 
         return [optimizer], [scheduler]
 
-    def forward(self, x: torch.Tensor, ch_pos: torch.Tensor, mask: Optional[torch.Tensor] = None):
+    def forward(
+        self, x: torch.Tensor, ch_pos: torch.Tensor, mask: Optional[torch.Tensor] = None, return_latent: bool = False
+    ):
         """
         Forward pass of the model.
 
@@ -149,7 +155,10 @@ class Transformer(pl.LightningModule):
             - `x` (Tensor): tensor of raw EEG signals (batch, channels, time)
             - `ch_pos` (Tensor): tensor of channel positions (batch, channels, 3)
             - `mask` (Tensor): optional attention mask (batch, channels)
+            - `return_latent` (bool): whether to return the latent representation
 
+        ### Returns
+            Tensor or Tuple[Tensor, Tensor]: logits and latent representation if `return_latent` is True, otherwise just logits
         """
         # apply batchnorm to the raw signal
         if self.hparams.raw_batchnorm:
@@ -160,29 +169,53 @@ class Transformer(pl.LightningModule):
         x, mask = self.pos_embed(x, ch_pos, mask=mask)
 
         # forward pass of the Transformer
-        x = self.model(x, encoder_input_mask=mask)
-
-        # extract the class token
-        x = x[:, 0]
+        z = self.model(x, encoder_input_mask=mask)
+        # extract the normalized class token
+        z = self.ln(z[:, 0])
         # classifier head
-        x = self.head(x)
-        return x
+        y = self.head(z)
+
+        if return_latent:
+            return y, z
+        return y
 
     def evaluate(self, batch, stage=None):
-        signal, ch_pos, mask, y = batch
-        y_hat = self(signal, ch_pos, mask=mask)
+        # split the signal into multiple chunks and expand the batch
+        if self.hparams.similarity_subsamples > 1:
+            batch = subsample_signal_batch(batch, self.hparams)
 
+        signal, ch_pos, mask, y = batch
+
+        # compute loss
+        y_hat, z = self(signal, ch_pos, mask=mask, return_latent=True)
         loss = F.cross_entropy(y_hat, y, weight=self.class_weights)
 
+        # compute similarity regularization loss
+        similarity_loss = 0.0
+        if self.hparams.similarity_subsamples > 1:
+            # split the latent representation into its subsamples
+            zs = z.split(z.size(0) // self.hparams.similarity_subsamples)
+
+            # compute pairwise cosine similarity
+            idxs = np.triu_indices(len(zs), k=1)
+            for i, j in zip(*idxs):
+                similarity_loss -= F.cosine_similarity(zs[i], zs[j]).mean()
+            similarity_loss /= len(idxs[0])
+
+        # log metrics
         if stage and not self.trainer.sanity_checking:
             acc = (y_hat.argmax(dim=-1) == y).float().mean()
 
             self.log(f"{stage}/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
             self.log(f"{stage}/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
+
+            if self.hparams.similarity_subsamples > 1:
+                self.log(f"{stage}/similarity_loss", similarity_loss, on_step=False, on_epoch=True)
+
             self.accumulate_labels(y, y_hat.argmax(dim=-1), stage)
         if stage == "train":
             self.log("learning_rate", self.lr_schedulers().get_last_lr()[0], on_step=True, on_epoch=False)
-        return loss
+        return loss + similarity_loss * self.hparams.similarity_loss_weight
 
     def training_step(self, batch, _):
         return self.evaluate(batch, "train")
