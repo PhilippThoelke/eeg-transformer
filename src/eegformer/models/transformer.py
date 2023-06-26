@@ -237,6 +237,10 @@ class Transformer(pl.LightningModule):
         self.predicted_labels[stage].extend(y_pred.cpu().numpy())
 
     def log_confusion_matrix(self, stage):
+        if not hasattr(self.logger.experiment, "log"):
+            pl.utilities.rank_zero_warn("Cannot log confusion matrix, no experiment logger found.")
+            return
+
         # get class names
         class_names = [self.trainer.datamodule.train_data.idx2label(i) for i in range(self.hparams.num_classes)]
         if class_names[0] is NotImplemented:
