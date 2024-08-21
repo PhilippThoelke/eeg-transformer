@@ -24,7 +24,7 @@ class DataModule(pl.LightningDataModule):
         self,
         chunk_secs=3,
         overlap_secs=1.5,
-        batch_size=32,
+        batch_size=64,
         num_workers=2,
         train_subjs=(1, 96),
         val_subjs=(96, 106),
