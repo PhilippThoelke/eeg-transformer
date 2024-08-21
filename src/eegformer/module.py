@@ -14,6 +14,7 @@ class LightningModule(pl.LightningModule):
         mask_rate=0.2,
         noise_scale=0.1,
         weight_decay=0,
+        variance_margin=0.2,
         debug=False,
     ):
         super().__init__()
@@ -45,20 +46,19 @@ class LightningModule(pl.LightningModule):
         # reconstruct raw data for all spatial channels
         x_recon = self.decoder(z, pos)
 
-        ####################################################################
-        #### TODO: epoch-wise regularization of variance of reconstructed epochs (currently reconstructions are all flat)
-        ####################################################################
-
         # compute loss
         loss = self.loss(x_recon, x)
 
         # KL divergence loss
         kl_loss = (-0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp(), dim=-1)).mean()
 
+        # hinged regularization of reconstructed epochs variance
+        recon_var = (torch.maximum(torch.scalar_tensor(0), self.hparams.variance_margin - x_recon.var(dim=-1))).mean()
+
         # log loss
         self.log(f"{stage}_loss", loss, prog_bar=True)
         self.log(f"{stage}_kl_loss", kl_loss, prog_bar=False)
-        return loss + kl_loss
+        return loss + kl_loss + recon_var
 
     def on_after_backward(self) -> None:
         if self.debug and self.global_step % self.trainer.num_training_batches == 0:
