@@ -257,7 +257,7 @@ class Encoder(nn.Module):
     def __init__(
         self,
         epoch_size: int,
-        embedding_dim: int = 1024,
+        embedding_dim: int = 512,
         hidden_channels: int = 32,
         num_layers: int = 4,
         temporal_headdim: int = 8,

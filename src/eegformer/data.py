@@ -22,9 +22,9 @@ class DataModule(pl.LightningDataModule):
 
     def __init__(
         self,
-        chunk_secs=3,
-        overlap_secs=1.5,
-        batch_size=64,
+        chunk_secs=4,
+        overlap_secs=2.55,
+        batch_size=128,
         num_workers=2,
         train_subjs=(1, 96),
         val_subjs=(96, 106),

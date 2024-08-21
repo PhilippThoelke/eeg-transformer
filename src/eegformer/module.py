@@ -10,7 +10,7 @@ class LightningModule(pl.LightningModule):
     def __init__(
         self,
         epoch_size=16,
-        lr=1e-3,
+        lr=5e-4,
         warmup_steps=2000,
         mask_rate=0.2,
         noise_scale=0.1,
