@@ -1,6 +1,6 @@
 lightning
 mne
 joblib
-mamba-ssm
-causal-conv1d
+mamba-ssm>=2.2.2
+causal-conv1d>=1.4.0
 numpy
