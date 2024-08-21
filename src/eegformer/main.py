@@ -1,3 +1,4 @@
+from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
 from lightning.pytorch.cli import LightningCLI
 
 from eegformer.data import DataModule
@@ -11,5 +12,9 @@ if __name__ == "__main__":
             max_epochs=-1,
             precision="16-mixed",
             gradient_clip_val=1.0,
+            callbacks=[
+                LearningRateMonitor(),
+                ModelCheckpoint(monitor="val_loss", filename="{epoch}-{step}-{val_loss:.2f}", save_last=True),
+            ],
         ),
     )
