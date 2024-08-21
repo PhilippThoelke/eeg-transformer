@@ -11,6 +11,7 @@ class LightningModule(pl.LightningModule):
         self,
         epoch_size=16,
         lr=1e-3,
+        warmup_steps=2000,
         mask_rate=0.2,
         noise_scale=0.1,
         weight_decay=0,
@@ -81,3 +82,12 @@ class LightningModule(pl.LightningModule):
         )
         sch = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.75)
         return {"optimizer": opt, "lr_scheduler": sch, "monitor": "val_loss"}
+
+    def optimizer_step(self, epoch, batch_idx, optimizer, optimizer_closure=None):
+        # perform lr warmup
+        if self.trainer.global_step < self.hparams.warmup_steps:
+            lr_scale = min(1.0, float(self.trainer.global_step + 1) / self.hparams.warmup_steps)
+            for pg in optimizer.param_groups:
+                pg["lr"] = lr_scale * self.hparams.lr
+
+        return super().optimizer_step(epoch, batch_idx, optimizer, optimizer_closure)
