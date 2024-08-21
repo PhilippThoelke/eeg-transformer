@@ -32,7 +32,7 @@ class Temporal(nn.Module):
 
     def __init__(self, hidden_channels, headdim, nheads):
         super().__init__()
-        self.norm = nn.RMSNorm(hidden_channels)
+        self.norm = nn.LayerNorm(hidden_channels)
         self.layer = Mamba2(
             hidden_channels,
             headdim=headdim,
@@ -60,7 +60,7 @@ class Spatial(nn.Module):
         self.headdim = headdim
         self.nheads = nheads
 
-        self.norm = nn.RMSNorm(hidden_channels)
+        self.norm = nn.LayerNorm(hidden_channels)
 
         self.q_bias = nn.Parameter(torch.zeros(nheads, headdim))
         self.qkv_proj = nn.Linear(hidden_channels, headdim * nheads * 3, bias=False)
@@ -91,7 +91,7 @@ class MLP(nn.Module):
 
     def __init__(self, hidden_channels, mlp_expansion):
         super().__init__()
-        self.norm = nn.RMSNorm(hidden_channels)
+        self.norm = nn.LayerNorm(hidden_channels)
 
         self.mlp = nn.Sequential(
             nn.Linear(hidden_channels, hidden_channels * mlp_expansion),
@@ -160,8 +160,8 @@ class Aggregator(nn.Module):
         self.headdim = headdim
         self.nheads = nheads
 
-        self.q_norm = nn.RMSNorm(embedding_dim)
-        self.kv_norm = nn.RMSNorm(hidden_channels)
+        self.q_norm = nn.LayerNorm(embedding_dim)
+        self.kv_norm = nn.LayerNorm(hidden_channels)
 
         self.q_proj = nn.Linear(embedding_dim, headdim * nheads)
         self.kv_proj = nn.Linear(hidden_channels, headdim * 2, bias=False)
@@ -202,8 +202,8 @@ class Distributor(nn.Module):
         self.headdim = headdim
         self.nheads = nheads
 
-        self.q_norm = nn.RMSNorm(hidden_channels)
-        self.kv_norm = nn.RMSNorm(embedding_dim)
+        self.q_norm = nn.LayerNorm(hidden_channels)
+        self.kv_norm = nn.LayerNorm(embedding_dim)
 
         self.q_proj = nn.Linear(hidden_channels, headdim)
         self.kv_proj = nn.Linear(embedding_dim, headdim * nheads * 2, bias=False)
