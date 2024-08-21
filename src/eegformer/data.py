@@ -1,7 +1,7 @@
 import os
 
+import lightning.pytorch as pl
 import numpy as np
-import pytorch_lightning as pl
 import torch
 from joblib import Parallel, delayed
 from mne.channels import make_standard_montage
@@ -24,7 +24,7 @@ class DataModule(pl.LightningDataModule):
         self,
         chunk_secs=3,
         overlap_secs=1.5,
-        batch_size=128,
+        batch_size=32,
         num_workers=2,
         train_subjs=(1, 96),
         val_subjs=(96, 106),
@@ -80,7 +80,7 @@ class DataModule(pl.LightningDataModule):
             self.train_pos,
             batch_size=self.hparams.batch_size,
             num_workers=self.hparams.num_workers,
-            stage="train",
+            shuffle=True,
             pin_memory=True,
         )
 
@@ -90,7 +90,6 @@ class DataModule(pl.LightningDataModule):
             self.val_pos,
             batch_size=self.hparams.batch_size,
             num_workers=self.hparams.num_workers,
-            stage="val",
             pin_memory=True,
         )
 
@@ -100,12 +99,11 @@ class DataModule(pl.LightningDataModule):
             self.test_pos,
             batch_size=self.hparams.batch_size,
             num_workers=self.hparams.num_workers,
-            stage="test",
             pin_memory=True,
         )
 
 
-def load_data(subjs, chunk_secs=2, overlap_secs=0.5):
+def load_data(subjs, chunk_secs, overlap_secs):
     # remove problematic subjects
     subjs = [subj for subj in subjs if subj not in PROBLEMATIC_SUBJECTS]
     if len(subjs) == 0:
@@ -123,7 +121,7 @@ def load_data(subjs, chunk_secs=2, overlap_secs=0.5):
     overlap_size = int(overlap_secs * sfreq)
 
     # extract epochs from all files
-    epochs = Parallel(n_jobs=-1)(
+    epochs = Parallel(n_jobs=-1, backend="multiprocessing")(
         delayed(_load_raw)(p, sfreq, pos, chunk_size, overlap_size) for p in tqdm(paths, desc="Loading data")
     )
     epochs = np.concatenate(epochs)
@@ -131,7 +129,7 @@ def load_data(subjs, chunk_secs=2, overlap_secs=0.5):
     return epochs, pos, sfreq, raw.info["ch_names"]
 
 
-def get_dataloader(x, pos, batch_size=128, num_workers=2, stage="train"):
+def get_dataloader(x, pos, **kwargs):
     if pos.ndim == 2:
         # NOTE: the DataLoader requires a batch dimension in all inputs
         pos = pos[None].repeat(len(x), 0)
@@ -140,7 +138,7 @@ def get_dataloader(x, pos, batch_size=128, num_workers=2, stage="train"):
         torch.from_numpy(x),
         torch.from_numpy(pos),
     )
-    return DataLoader(dataset, batch_size=batch_size, shuffle=stage == "train", num_workers=num_workers)
+    return DataLoader(dataset, **kwargs)
 
 
 def normalize(*xs, clip_percentile=95):
@@ -149,8 +147,10 @@ def normalize(*xs, clip_percentile=95):
     mad = np.median(np.abs(xs[0] - med))
     clip_val = np.percentile(np.abs((xs[0] - med) / mad), clip_percentile)
 
-    res = tuple(np.clip((x - med) / mad, -clip_val, clip_val) for x in xs)
-    return res if len(res) > 1 else res[0]
+    xs = list(xs)
+    for i in range(len(xs)):
+        xs[i] = np.clip((xs[i] - med) / mad, -clip_val, clip_val)
+    return tuple(xs) if len(xs) > 1 else xs[0]
 
 
 def _load_raw(path, sfreq=None, ch_pos=None, chunk_size=None, overlap_size=None, get_raw=False):

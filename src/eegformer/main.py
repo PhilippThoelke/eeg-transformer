@@ -4,7 +4,7 @@ from eegformer.data import DataModule
 from eegformer.module import LightningModule
 
 if __name__ == "__main__":
-    cli = LightningCLI(
+    LightningCLI(
         LightningModule,
         DataModule,
         trainer_defaults=dict(

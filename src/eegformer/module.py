@@ -1,4 +1,4 @@
-import pytorch_lightning as pl
+import lightning.pytorch as pl
 import torch
 from torch import nn
 
@@ -74,8 +74,10 @@ class LightningModule(pl.LightningModule):
         return self.step(batch, batch_idx, "test")
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(
+        opt = torch.optim.AdamW(
             self.parameters(),
             lr=self.hparams.lr,
             weight_decay=self.hparams.weight_decay,
         )
+        sch = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.75)
+        return {"optimizer": opt, "lr_scheduler": sch, "monitor": "val_loss"}
