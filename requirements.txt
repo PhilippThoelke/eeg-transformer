@@ -1,7 +1,6 @@
 lightning
-xformers
 mne
 joblib
-scikit-learn
-wandb
-webdataset
+mamba-ssm
+causal-conv1d
+numpy

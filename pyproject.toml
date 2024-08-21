@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
+requires = ["setuptools"]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
@@ -9,6 +9,6 @@ dependencies = {file = ["requirements.txt"]}
 line-length = 120
 
 [project]
-name = "eegformer"
 dynamic = ["dependencies"]
-version = "0.1.0"
+name = "eegformer"
+version = "0.0.1"

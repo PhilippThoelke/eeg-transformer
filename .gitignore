@@ -128,20 +128,8 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# logdir
-lightning_logs/
-
-# figures dir
-figures/
-
-# data dir
-data/
-
 # VS code dir
 .vscode/
 
-# Weights and Biases dir
-wandb/
-
-# project dir
-PhysionetMotorImagery/
+# logdir
+lightning_logs/

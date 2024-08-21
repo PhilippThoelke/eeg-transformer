@@ -1,0 +1,96 @@
+import os
+
+import numpy as np
+import torch
+from joblib import Parallel, delayed
+from mne.channels import make_standard_montage
+from mne.datasets import eegbci
+from mne.io import read_raw
+from torch.utils.data import DataLoader, TensorDataset
+from tqdm import tqdm
+
+if "DATA_DIR" not in os.environ:
+    raise ValueError("Please set the DATA_DIR environment variable to point to the EEGBCI dataset")
+
+DATA_DIR = os.environ["DATA_DIR"]
+
+PROBLEMATIC_SUBJECTS = [88, 89, 92, 100, 104, 106]
+
+
+def load_data(subjs, epoch_secs=2, overlap_secs=0.5):
+    # remove problematic subjects
+    subjs = [subj for subj in subjs if subj not in PROBLEMATIC_SUBJECTS]
+    if len(subjs) == 0:
+        raise ValueError("No valid subjects left after excluding problematic subjects")
+
+    # get raw file paths
+    paths = (eegbci.load_data(subj, list(range(1, 15)), DATA_DIR, update_path=False) for subj in subjs)
+    paths = sum(paths, [])
+
+    # load first file to retrieve metadata
+    raw = _load_raw(paths[0], get_raw=True)
+    sfreq = raw.info["sfreq"]
+    pos = raw._get_channel_positions().astype(np.float32)
+    epoch_size = int(epoch_secs * sfreq)
+    overlap_size = int(overlap_secs * sfreq)
+
+    # extract epochs from all files
+    epochs = Parallel(n_jobs=-1)(
+        delayed(_load_raw)(p, sfreq, pos, epoch_size, overlap_size) for p in tqdm(paths, desc="Loading data")
+    )
+    epochs = np.concatenate(epochs)
+
+    return epochs, pos, sfreq, raw.info["ch_names"]
+
+
+def get_dataloader(x, pos, batch_size=128, stage="train"):
+    if pos.ndim == 2:
+        # NOTE: the DataLoader requires a batch dimension in all inputs
+        pos = pos[None].repeat(len(x), 0)
+
+    dataset = TensorDataset(
+        torch.from_numpy(x),
+        torch.from_numpy(pos),
+    )
+    return DataLoader(dataset, batch_size=batch_size, shuffle=stage == "train", num_workers=2)
+
+
+def normalize(*xs, clip_percentile=95):
+    # compute median and median absolute deviation from the first input
+    med = np.median(xs[0])
+    mad = np.median(np.abs(xs[0] - med))
+    clip_val = np.percentile(np.abs((xs[0] - med) / mad), clip_percentile)
+
+    res = tuple(np.clip((x - med) / mad, -clip_val, clip_val) for x in xs)
+    return res if len(res) > 1 else res[0]
+
+
+def _load_raw(path, sfreq=None, ch_pos=None, epoch_size=None, overlap_size=None, get_raw=False):
+    assert get_raw or (
+        sfreq is not None and ch_pos is not None and epoch_size is not None and overlap_size is not None
+    ), "Specify either get_raw=True or provide all metadata"
+
+    raw = read_raw(path, preload=True, verbose=False)
+    eegbci.standardize(raw)
+    raw.set_montage(make_standard_montage("standard_1005"), verbose=False)
+    raw.set_eeg_reference("average", verbose=False)
+    raw.notch_filter([60], verbose=False)
+    raw.filter(1, None, verbose=False)
+
+    # make sure the metadata matches the reference
+    if sfreq is not None:
+        assert raw.info["sfreq"] == sfreq, "Sampling frequency mismatch"
+    if ch_pos is not None:
+        assert np.allclose(raw._get_channel_positions(), ch_pos), "Channel positions mismatch"
+
+    if get_raw:
+        # simply return the raw object
+        return raw
+
+    # extract epochs
+    signal = raw.get_data()
+    epochs = []
+    for i in range(0, signal.shape[1] - epoch_size, epoch_size - overlap_size):
+        x = signal[:, i : i + epoch_size]
+        epochs.append(x)
+    return np.stack(epochs).astype(np.float32)
