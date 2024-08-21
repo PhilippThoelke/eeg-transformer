@@ -37,11 +37,12 @@ class Temporal(nn.Module):
             hidden_channels,
             headdim=headdim,
             expand=8,  # correct would be (nheads * headdim) // hidden_channels but this raises an error
-            rmsnorm=True,
+            rmsnorm=False,
         )
 
     @torch.autocast("cuda", enabled=False)
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.float()
         return x + self.layer(self.norm(x))
 
 
