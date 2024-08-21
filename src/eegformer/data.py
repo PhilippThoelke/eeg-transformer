@@ -114,7 +114,7 @@ def load_data(subjs, chunk_secs, overlap_secs):
     paths = sum(paths, [])
 
     # load first file to retrieve metadata
-    raw = _load_raw(paths[0], get_raw=True)
+    raw = load_recording(paths[0], get_raw=True)
     sfreq = raw.info["sfreq"]
     pos = raw._get_channel_positions().astype(np.float32)
     chunk_size = int(chunk_secs * sfreq)
@@ -122,7 +122,7 @@ def load_data(subjs, chunk_secs, overlap_secs):
 
     # extract epochs from all files
     epochs = Parallel(n_jobs=-1, backend="multiprocessing")(
-        delayed(_load_raw)(p, sfreq, pos, chunk_size, overlap_size) for p in tqdm(paths, desc="Loading data")
+        delayed(load_recording)(p, sfreq, pos, chunk_size, overlap_size) for p in tqdm(paths, desc="Loading data")
     )
     epochs = np.concatenate(epochs)
 
@@ -153,7 +153,7 @@ def normalize(*xs, clip_percentile=95):
     return tuple(xs) if len(xs) > 1 else xs[0]
 
 
-def _load_raw(path, sfreq=None, ch_pos=None, chunk_size=None, overlap_size=None, get_raw=False):
+def load_recording(path, sfreq=None, ch_pos=None, chunk_size=None, overlap_size=None, get_raw=False):
     assert get_raw or (
         sfreq is not None and ch_pos is not None and chunk_size is not None and overlap_size is not None
     ), "Specify either get_raw=True or provide all metadata"
