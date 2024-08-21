@@ -1,6 +1,7 @@
 import os
 
 import numpy as np
+import pytorch_lightning as pl
 import torch
 from joblib import Parallel, delayed
 from mne.channels import make_standard_montage
@@ -17,7 +18,93 @@ DATA_DIR = os.environ["DATA_DIR"]
 PROBLEMATIC_SUBJECTS = [88, 89, 92, 100, 104, 106]
 
 
-def load_data(subjs, epoch_secs=2, overlap_secs=0.5):
+class DataModule(pl.LightningDataModule):
+
+    def __init__(
+        self,
+        chunk_secs=3,
+        overlap_secs=1.5,
+        batch_size=128,
+        num_workers=2,
+        train_subjs=(1, 96),
+        val_subjs=(96, 106),
+        test_subjs=(106, 110),
+    ):
+        super().__init__()
+        self.save_hyperparameters()
+
+    def prepare_data(self):
+        """Download the dataset."""
+        subjs = (
+            list(range(*self.hparams.train_subjs))
+            + list(range(*self.hparams.val_subjs))
+            + list(range(*self.hparams.test_subjs))
+        )
+        for subj in subjs:
+            if subj in PROBLEMATIC_SUBJECTS:
+                eegbci.load_data(subj, list(range(1, 15)), DATA_DIR, update_path=False)
+
+    def setup(self, stage: str):
+        """Instantiate the dataset for each split."""
+        if stage == "fit":
+            self.train_epochs, self.train_pos, self.sfreq, self.ch_names = load_data(
+                range(*self.hparams.train_subjs), self.hparams.chunk_secs, self.hparams.overlap_secs
+            )
+            self.val_epochs, self.val_pos, _, _ = load_data(
+                range(*self.hparams.val_subjs), self.hparams.chunk_secs, self.hparams.overlap_secs
+            )
+            self.test_epochs, self.test_pos, _, _ = load_data(
+                range(*self.hparams.test_subjs), self.hparams.chunk_secs, self.hparams.overlap_secs
+            )
+
+            self.train_epochs, self.val_epochs, self.test_epochs = normalize(
+                self.train_epochs, self.val_epochs, self.test_epochs
+            )
+        elif stage == "val":
+            self.val_epochs, self.val_pos, self.sfreq, self.ch_names = load_data(
+                range(*self.hparams.val_subjs), self.hparams.chunk_secs, self.hparams.overlap_secs
+            )
+            self.val_epochs = normalize(self.val_epochs)
+        elif stage == "test":
+            self.test_epochs, self.test_pos, self.sfreq, self.ch_names = load_data(
+                range(*self.hparams.test_subjs), self.hparams.chunk_secs, self.hparams.overlap_secs
+            )
+            self.test_epochs = normalize(self.test_epochs)
+        else:
+            raise ValueError(f"Invalid stage: {stage}")
+
+    def train_dataloader(self):
+        return get_dataloader(
+            self.train_epochs,
+            self.train_pos,
+            batch_size=self.hparams.batch_size,
+            num_workers=self.hparams.num_workers,
+            stage="train",
+            pin_memory=True,
+        )
+
+    def val_dataloader(self):
+        return get_dataloader(
+            self.val_epochs,
+            self.val_pos,
+            batch_size=self.hparams.batch_size,
+            num_workers=self.hparams.num_workers,
+            stage="val",
+            pin_memory=True,
+        )
+
+    def test_dataloader(self):
+        return get_dataloader(
+            self.test_epochs,
+            self.test_pos,
+            batch_size=self.hparams.batch_size,
+            num_workers=self.hparams.num_workers,
+            stage="test",
+            pin_memory=True,
+        )
+
+
+def load_data(subjs, chunk_secs=2, overlap_secs=0.5):
     # remove problematic subjects
     subjs = [subj for subj in subjs if subj not in PROBLEMATIC_SUBJECTS]
     if len(subjs) == 0:
@@ -31,19 +118,19 @@ def load_data(subjs, epoch_secs=2, overlap_secs=0.5):
     raw = _load_raw(paths[0], get_raw=True)
     sfreq = raw.info["sfreq"]
     pos = raw._get_channel_positions().astype(np.float32)
-    epoch_size = int(epoch_secs * sfreq)
+    chunk_size = int(chunk_secs * sfreq)
     overlap_size = int(overlap_secs * sfreq)
 
     # extract epochs from all files
     epochs = Parallel(n_jobs=-1)(
-        delayed(_load_raw)(p, sfreq, pos, epoch_size, overlap_size) for p in tqdm(paths, desc="Loading data")
+        delayed(_load_raw)(p, sfreq, pos, chunk_size, overlap_size) for p in tqdm(paths, desc="Loading data")
     )
     epochs = np.concatenate(epochs)
 
     return epochs, pos, sfreq, raw.info["ch_names"]
 
 
-def get_dataloader(x, pos, batch_size=128, stage="train"):
+def get_dataloader(x, pos, batch_size=128, num_workers=2, stage="train"):
     if pos.ndim == 2:
         # NOTE: the DataLoader requires a batch dimension in all inputs
         pos = pos[None].repeat(len(x), 0)
@@ -52,7 +139,7 @@ def get_dataloader(x, pos, batch_size=128, stage="train"):
         torch.from_numpy(x),
         torch.from_numpy(pos),
     )
-    return DataLoader(dataset, batch_size=batch_size, shuffle=stage == "train", num_workers=2)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=stage == "train", num_workers=num_workers)
 
 
 def normalize(*xs, clip_percentile=95):
@@ -65,9 +152,9 @@ def normalize(*xs, clip_percentile=95):
     return res if len(res) > 1 else res[0]
 
 
-def _load_raw(path, sfreq=None, ch_pos=None, epoch_size=None, overlap_size=None, get_raw=False):
+def _load_raw(path, sfreq=None, ch_pos=None, chunk_size=None, overlap_size=None, get_raw=False):
     assert get_raw or (
-        sfreq is not None and ch_pos is not None and epoch_size is not None and overlap_size is not None
+        sfreq is not None and ch_pos is not None and chunk_size is not None and overlap_size is not None
     ), "Specify either get_raw=True or provide all metadata"
 
     raw = read_raw(path, preload=True, verbose=False)
@@ -87,10 +174,10 @@ def _load_raw(path, sfreq=None, ch_pos=None, epoch_size=None, overlap_size=None,
         # simply return the raw object
         return raw
 
-    # extract epochs
+    # split the data into chunks
     signal = raw.get_data()
-    epochs = []
-    for i in range(0, signal.shape[1] - epoch_size, epoch_size - overlap_size):
-        x = signal[:, i : i + epoch_size]
-        epochs.append(x)
-    return np.stack(epochs).astype(np.float32)
+    chunks = []
+    for i in range(0, signal.shape[1] - chunk_size, chunk_size - overlap_size):
+        x = signal[:, i : i + chunk_size]
+        chunks.append(x)
+    return np.stack(chunks).astype(np.float32)

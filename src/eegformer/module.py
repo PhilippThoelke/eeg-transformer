@@ -70,6 +70,9 @@ class LightningModule(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         return self.step(batch, batch_idx, "val")
 
+    def test_step(self, batch, batch_idx):
+        return self.step(batch, batch_idx, "test")
+
     def configure_optimizers(self):
         return torch.optim.AdamW(
             self.parameters(),
