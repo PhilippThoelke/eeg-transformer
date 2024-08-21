@@ -42,7 +42,8 @@ class DataModule(pl.LightningDataModule):
         )
         for subj in subjs:
             if subj in PROBLEMATIC_SUBJECTS:
-                eegbci.load_data(subj, list(range(1, 15)), DATA_DIR, update_path=False)
+                continue
+            eegbci.load_data(subj, list(range(1, 15)), DATA_DIR, update_path=False)
 
     def setup(self, stage: str):
         """Instantiate the dataset for each split."""
