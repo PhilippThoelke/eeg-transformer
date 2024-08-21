@@ -29,9 +29,16 @@ class DataModule(pl.LightningDataModule):
         train_subjs=(1, 96),
         val_subjs=(96, 106),
         test_subjs=(106, 110),
+        debug=False,
     ):
         super().__init__()
-        self.save_hyperparameters()
+
+        if debug:
+            train_subjs = (1, 2)
+            val_subjs = (2, 3)
+            test_subjs = (3, 4)
+
+        self.save_hyperparameters(ignore="debug")
 
     def prepare_data(self):
         """Download the dataset."""
