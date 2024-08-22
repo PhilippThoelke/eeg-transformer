@@ -32,13 +32,12 @@ class DataModule(pl.LightningDataModule):
         debug: Union[bool, int] = False,
     ):
         super().__init__()
+        self.save_hyperparameters(ignore="debug")
 
         if debug:
-            train_subjs = (1, debug + 1)
-            val_subjs = (debug + 1, debug + 2)
-            test_subjs = (debug + 2, debug + 3)
-
-        self.save_hyperparameters(ignore="debug")
+            self.hparams.train_subjs = (1, debug + 1)
+            self.hparams.val_subjs = (debug + 1, debug + 2)
+            self.hparams.test_subjs = (debug + 2, debug + 3)
 
     def prepare_data(self):
         """Download the dataset."""
