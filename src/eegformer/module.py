@@ -1,3 +1,5 @@
+from typing import Union
+
 import lightning.pytorch as pl
 import torch
 from torch import nn
@@ -9,14 +11,14 @@ from eegformer.utils import mask_channels, plot_gradients
 class LightningModule(pl.LightningModule):
     def __init__(
         self,
-        epoch_size=16,
-        lr=1e-4,
-        warmup_steps=2000,
-        mask_rate=0.8,
-        noise_scale=0.1,
-        weight_decay=0,
-        variance_margin=0.2,
-        debug=False,
+        epoch_size: int = 16,
+        lr: float = 1e-3,
+        lr_warmup: int = 4000,
+        kl_warmup: int = 12000,
+        mask_rate: float = 0.5,
+        noise_scale: float = 0.1,
+        weight_decay: float = 0,
+        debug: Union[bool, int] = False,
     ):
         super().__init__()
         self.save_hyperparameters(ignore="debug")
@@ -45,24 +47,26 @@ class LightningModule(pl.LightningModule):
         z = self.encoder.reparametrize(mu, logvar)
 
         # reconstruct raw data for all spatial channels
-        x_recon = self.decoder(z, pos_masked)  # self.decoder(z, pos)
+        x_recon = self.decoder(z, pos)
 
         # compute loss
-        loss = self.loss(x_recon, x_masked)  # self.loss(x_recon, x)
+        loss = self.loss(x_recon, x)
 
         # KL divergence loss
-        kl_loss = (-0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp(), dim=-1)).mean()
-
-        # hinged regularization of reconstructed epochs variance
-        recon_var = (torch.maximum(torch.scalar_tensor(0), self.hparams.variance_margin - x_recon.var(dim=-1))).mean()
+        kl_div = (1 + logvar - mu**2 - logvar.exp()).mean() * -0.5
+        kl_weight = min(1.0, self.global_step / self.hparams.kl_warmup)
 
         # log loss
         self.log(f"loss/{stage}", loss, prog_bar=True)
-        self.log(f"kl_loss/{stage}", kl_loss, prog_bar=False)
-        return loss + kl_loss + recon_var
+        self.log(f"kl_div/{stage}", kl_div, prog_bar=False)
+        return loss + kl_div * kl_weight
 
     def on_after_backward(self) -> None:
-        if self.debug and self.global_step % self.trainer.num_training_batches == 0:
+        if (
+            self.debug
+            and self.global_step % self.trainer.num_training_batches == 0
+            and self.current_epoch % int(self.debug) == 0
+        ):
             plot_gradients(self)
 
     def training_step(self, batch, batch_idx):
@@ -85,8 +89,8 @@ class LightningModule(pl.LightningModule):
 
     def optimizer_step(self, epoch, batch_idx, optimizer, optimizer_closure=None):
         # perform lr warmup
-        if self.trainer.global_step < self.hparams.warmup_steps:
-            lr_scale = min(1.0, float(self.trainer.global_step + 1) / self.hparams.warmup_steps)
+        if self.trainer.global_step < self.hparams.lr_warmup:
+            lr_scale = min(1.0, (self.trainer.global_step + 1) / self.hparams.lr_warmup)
             for pg in optimizer.param_groups:
                 pg["lr"] = lr_scale * self.hparams.lr
 
