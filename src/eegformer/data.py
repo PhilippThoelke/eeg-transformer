@@ -19,7 +19,6 @@ PROBLEMATIC_SUBJECTS = [88, 89, 92, 100, 104, 106]
 
 
 class DataModule(pl.LightningDataModule):
-
     def __init__(
         self,
         chunk_secs=4,

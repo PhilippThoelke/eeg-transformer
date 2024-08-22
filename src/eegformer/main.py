@@ -1,5 +1,6 @@
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
 from lightning.pytorch.cli import LightningCLI
+from lightning.pytorch.loggers import TensorBoardLogger
 
 from eegformer.data import DataModule
 from eegformer.module import LightningModule
@@ -14,7 +15,8 @@ if __name__ == "__main__":
             gradient_clip_val=1.0,
             callbacks=[
                 LearningRateMonitor(logging_interval="step"),
-                ModelCheckpoint(monitor="val_loss", filename="{epoch}-{step}-{val_loss:.2f}", save_last=True),
+                ModelCheckpoint(monitor="loss/val", filename="{epoch}-{step}-{val_loss:.2f}", save_last=True),
             ],
+            logger=TensorBoardLogger("", default_hp_metric=False),
         ),
     )

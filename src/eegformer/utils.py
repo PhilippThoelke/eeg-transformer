@@ -13,7 +13,6 @@ def mask_channels(*args, rate: float, dim: int = 1, return_mask=False):
 
 
 def plot_gradients(module):
-
     from matplotlib import pyplot as plt
 
     layers, ave_grads, max_grads, ave_weights, max_weights = [], [], [], [], []

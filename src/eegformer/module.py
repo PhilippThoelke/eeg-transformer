@@ -10,9 +10,9 @@ class LightningModule(pl.LightningModule):
     def __init__(
         self,
         epoch_size=16,
-        lr=5e-4,
+        lr=1e-4,
         warmup_steps=2000,
-        mask_rate=0.2,
+        mask_rate=0.8,
         noise_scale=0.1,
         weight_decay=0,
         variance_margin=0.2,
@@ -45,10 +45,10 @@ class LightningModule(pl.LightningModule):
         z = self.encoder.reparametrize(mu, logvar)
 
         # reconstruct raw data for all spatial channels
-        x_recon = self.decoder(z, pos)
+        x_recon = self.decoder(z, pos_masked)  # self.decoder(z, pos)
 
         # compute loss
-        loss = self.loss(x_recon, x)
+        loss = self.loss(x_recon, x_masked)  # self.loss(x_recon, x)
 
         # KL divergence loss
         kl_loss = (-0.5 * torch.sum(1 + logvar - mu**2 - logvar.exp(), dim=-1)).mean()
@@ -57,8 +57,8 @@ class LightningModule(pl.LightningModule):
         recon_var = (torch.maximum(torch.scalar_tensor(0), self.hparams.variance_margin - x_recon.var(dim=-1))).mean()
 
         # log loss
-        self.log(f"{stage}_loss", loss, prog_bar=True)
-        self.log(f"{stage}_kl_loss", kl_loss, prog_bar=False)
+        self.log(f"loss/{stage}", loss, prog_bar=True)
+        self.log(f"kl_loss/{stage}", kl_loss, prog_bar=False)
         return loss + kl_loss + recon_var
 
     def on_after_backward(self) -> None:
@@ -81,7 +81,7 @@ class LightningModule(pl.LightningModule):
             weight_decay=self.hparams.weight_decay,
         )
         sch = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.75)
-        return {"optimizer": opt, "lr_scheduler": sch, "monitor": "val_loss"}
+        return {"optimizer": opt, "lr_scheduler": sch, "monitor": "loss/val"}
 
     def optimizer_step(self, epoch, batch_idx, optimizer, optimizer_closure=None):
         # perform lr warmup
