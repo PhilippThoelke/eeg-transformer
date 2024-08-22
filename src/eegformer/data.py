@@ -1,4 +1,5 @@
 import os
+from typing import Tuple, Union
 
 import lightning.pytorch as pl
 import numpy as np
@@ -21,21 +22,21 @@ PROBLEMATIC_SUBJECTS = [88, 89, 92, 100, 104, 106]
 class DataModule(pl.LightningDataModule):
     def __init__(
         self,
-        chunk_secs=4,
-        overlap_secs=2.55,
-        batch_size=128,
-        num_workers=2,
-        train_subjs=(1, 96),
-        val_subjs=(96, 106),
-        test_subjs=(106, 110),
-        debug=False,
+        chunk_secs: float = 4,
+        overlap_secs: float = 2.55,
+        batch_size: int = 128,
+        num_workers: int = 2,
+        train_subjs: Tuple[int, int] = (1, 96),
+        val_subjs: Tuple[int, int] = (96, 106),
+        test_subjs: Tuple[int, int] = (106, 110),
+        debug: Union[bool, int] = False,
     ):
         super().__init__()
 
         if debug:
-            train_subjs = (1, 2)
-            val_subjs = (2, 3)
-            test_subjs = (3, 4)
+            train_subjs = (1, debug + 1)
+            val_subjs = (debug + 1, debug + 2)
+            test_subjs = (debug + 2, debug + 3)
 
         self.save_hyperparameters(ignore="debug")
 
