@@ -13,7 +13,7 @@ if __name__ == "__main__":
             precision="16-mixed",
             gradient_clip_val=1.0,
             callbacks=[
-                LearningRateMonitor(),
+                LearningRateMonitor(logging_interval="step"),
                 ModelCheckpoint(monitor="val_loss", filename="{epoch}-{step}-{val_loss:.2f}", save_last=True),
             ],
         ),
