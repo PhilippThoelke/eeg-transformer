@@ -43,14 +43,14 @@ class LightningModule(pl.LightningModule):
         x_masked, pos_masked = mask_channels(x, pos, rate=self.hparams.mask_rate, dim=1)
 
         # encode the data up to the last epoch
-        mu, logvar = self(x_masked, pos_masked, reparametrize=False)
+        mu, logvar = self(x_masked[:, :, :-1], pos_masked, reparametrize=False)
         z = self.encoder.reparametrize(mu, logvar)
 
         # reconstruct raw data for all spatial channels
         x_recon = self.decoder(z, pos)
 
-        # compute loss
-        loss = self.loss(x_recon, x)
+        # compute autoregressive loss
+        loss = self.loss(x_recon, x[:, :, 1:])
 
         # KL divergence loss
         kl_div = (1 + logvar - mu**2 - logvar.exp()).mean() * -0.5
