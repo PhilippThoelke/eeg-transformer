@@ -13,19 +13,49 @@ class LightningModule(pl.LightningModule):
         self,
         epoch_size: int = 16,
         lr: float = 1e-3,
-        lr_warmup: int = 4000,
-        kl_warmup: int = 12000,
+        lr_warmup: int = 2000,
+        kl_warmup: int = 8000,
         mask_rate: float = 0.5,
         noise_scale: float = 0.1,
         weight_decay: float = 0,
+        embedding_dim: int = 768,
+        hidden_channels: int = 48,
+        num_encoder_layers: int = 5,
+        num_decoder_layers: int = 3,
+        temporal_headdim: int = 16,
+        temporal_nheads: int = 4,
+        spatial_headdim: int = 16,
+        spatial_nheads: int = 4,
+        aggdist_headdim: int = 24,
+        aggdist_nheads: int = 6,
+        mlp_expansion: int = 3,
         debug: Union[bool, int] = False,
     ):
         super().__init__()
         self.save_hyperparameters(ignore="debug")
         self.debug = debug
 
-        self.encoder = Encoder(epoch_size)
-        self.decoder = Decoder.from_encoder(self.encoder)
+        self.encoder = Encoder(
+            epoch_size,
+            embedding_dim=embedding_dim,
+            hidden_channels=hidden_channels,
+            num_layers=num_encoder_layers,
+            temporal_headdim=temporal_headdim,
+            temporal_nheads=temporal_nheads,
+            spatial_headdim=spatial_headdim,
+            spatial_nheads=spatial_nheads,
+            aggregation_headdim=aggdist_headdim,
+            aggregation_nheads=aggdist_nheads,
+            mlp_expansion=mlp_expansion,
+        )
+        self.decoder = Decoder.from_encoder(
+            self.encoder,
+            hidden_channels=hidden_channels,
+            num_layers=num_decoder_layers,
+            distribution_headdim=aggdist_headdim,
+            distribution_nheads=aggdist_nheads,
+            mlp_expansion=mlp_expansion,
+        )
         self.loss = nn.MSELoss()
 
     def forward(self, x, pos, reparametrize=True):
