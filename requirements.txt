@@ -5,4 +5,3 @@ mamba-ssm>=2.2.2
 causal-conv1d>=1.4.0
 numpy
 tensorboard
-jsonargparse<4.26
