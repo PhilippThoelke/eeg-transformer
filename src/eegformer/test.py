@@ -59,37 +59,36 @@ def show_last_epoch(ckpt_path, mask_rate=0.5, device="cuda"):
         x = model.encoder.to_epochs(x)
         (x_masked, pos_masked), mask = mask_channels(x, pos, rate=mask_rate, dim=1, return_mask=True)
 
-        mu, logvar = model.encoder(x_masked, pos_masked, reparametrize=False)
-        x = x.squeeze(0).cpu().numpy()
+        mu, logvar = model.encoder(x_masked[:, :, :-1], pos_masked, reparametrize=False)
+        x = x.squeeze(0)[:, 1:].cpu().numpy()
 
         def update(frame, axes):
             z = model.encoder.reparametrize(mu, logvar)
-            x_recon = model.decoder(z, pos).squeeze(0).cpu().numpy()
-
-            recon = x_recon[:, -1]
+            pred = model.decoder(z, pos).squeeze(0).cpu().numpy()
 
             artists = []
             for i, ax in enumerate(axes.flat[: x.shape[0]]):
-                ax.lines[1].set_ydata(recon[i])
+                ax.lines[1].set_ydata(pred[i, -1])
                 artists.append(ax.lines[1])
 
             return tuple(artists)
 
-        fig, axes = plt.subplots(int(np.ceil(x.shape[0] / 5)), 5, sharex=True, sharey=True)
+        fig, axes = plt.subplots(int(np.ceil(x.shape[0] / 6)), 6, sharex=True, sharey=True)
         for i, ax in enumerate(axes.flat):
             if i < x.shape[0]:
                 ax.plot(x[i, -1])
                 ax.plot(x[i, -1])
                 ax.set_title(ch_names[i], color="black" if mask[i] else "red")
             ax.axis("off")
-        fig.legend(["Original", "Reconstructed"], loc="upper right")
+        fig.legend(["True", "Predicted"], loc="upper right")
+        fig.subplots_adjust(0, 0, 1, 0.95)
 
-        _ = FuncAnimation(fig, update, fargs=(axes,), blit=True, interval=0)
+        _ = FuncAnimation(fig, update, fargs=(axes,), blit=True, interval=10, cache_frame_data=False)
         plt.show()
 
 
 if __name__ == "__main__":
     ckpt_path = "last.ckpt"
 
-    show_latent_progression(ckpt_path)
-    # show_last_epoch(ckpt_path)
+    # show_latent_progression(ckpt_path)
+    show_last_epoch(ckpt_path)
