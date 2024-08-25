@@ -59,8 +59,13 @@ def show_last_epoch(ckpt_path, mask_rate=0.5, device="cuda"):
         x = model.encoder.to_epochs(x)
         (x_masked, pos_masked), mask = mask_channels(x, pos, rate=mask_rate, dim=1, return_mask=True)
 
-        mu, logvar = model.encoder(x_masked[:, :, :-1], pos_masked, reparametrize=False)
-        x = x.squeeze(0)[:, 1:].cpu().numpy()
+        if model.hparams.autoregressive:
+            x_masked = x_masked[:, :, :-1]
+            x = x[:, :, 1:]
+
+        mu, logvar = model.encoder(x_masked, pos_masked, reparametrize=False)
+
+        x = x.squeeze(0).cpu().numpy()
 
         def update(frame, axes):
             z = model.encoder.reparametrize(mu, logvar)

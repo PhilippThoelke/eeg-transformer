@@ -12,6 +12,7 @@ class LightningModule(pl.LightningModule):
     def __init__(
         self,
         epoch_size: int = 16,
+        autoregressive: bool = True,
         lr: float = 1e-3,
         lr_warmup: int = 2000,
         kl_warmup: int = 8000,
@@ -72,15 +73,19 @@ class LightningModule(pl.LightningModule):
         # hide some spatial channels
         x_masked, pos_masked = mask_channels(x, pos, rate=self.hparams.mask_rate, dim=1)
 
+        if self.hparams.autoregressive:
+            x_masked = x_masked[:, :, :-1]
+            x = x[:, :, 1:]
+
         # encode the data up to the last epoch
-        mu, logvar = self(x_masked[:, :, :-1], pos_masked, reparametrize=False)
+        mu, logvar = self(x_masked, pos_masked, reparametrize=False)
         z = self.encoder.reparametrize(mu, logvar)
 
         # predict next epoch for all spatial channels
         x_pred = self.decoder(z, pos)
 
         # compute autoregressive loss
-        loss = self.loss(x_pred, x[:, :, 1:])
+        loss = self.loss(x_pred, x)
 
         # KL divergence loss
         kl_div = (1 + logvar - mu**2 - logvar.exp()).mean() * -0.5
