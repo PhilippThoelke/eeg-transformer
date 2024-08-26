@@ -16,6 +16,9 @@ if "DATA_DIR" not in os.environ:
 
 DATA_DIR = os.environ["DATA_DIR"]
 
+TRAIN_SUBJECTS = (1, 96)
+VAL_SUBJECTS = (96, 106)
+TEST_SUBJECTS = (106, 110)
 PROBLEMATIC_SUBJECTS = [88, 89, 92, 100, 104, 106]
 
 
@@ -26,10 +29,10 @@ class DataModule(pl.LightningDataModule):
         overlap_secs: float = 2.55,
         batch_size: int = 128,
         num_workers: int = 2,
-        train_subjs: Tuple[int, int] = (1, 96),
-        val_subjs: Tuple[int, int] = (96, 106),
-        test_subjs: Tuple[int, int] = (106, 110),
-        debug: Union[bool, int] = False,
+        train_subjs: Tuple[int, int] = TRAIN_SUBJECTS,
+        val_subjs: Tuple[int, int] = VAL_SUBJECTS,
+        test_subjs: Tuple[int, int] = TEST_SUBJECTS,
+        debug: Union[bool, int] = 2,
     ):
         super().__init__()
         self.save_hyperparameters(ignore="debug")
