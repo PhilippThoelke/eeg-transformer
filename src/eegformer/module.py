@@ -12,7 +12,7 @@ class LightningModule(pl.LightningModule):
     def __init__(
         self,
         epoch_size: int = 16,
-        autoregressive: bool = True,
+        autoregressive: bool = False,
         lr: float = 1e-3,
         lr_warmup: int = 2000,
         kl_warmup: int = 8000,
@@ -34,6 +34,7 @@ class LightningModule(pl.LightningModule):
     ):
         super().__init__()
         self.save_hyperparameters(ignore="debug")
+        self.epoch_size = epoch_size
         self.debug = debug
 
         self.encoder = Encoder(
