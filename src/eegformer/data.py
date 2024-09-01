@@ -32,7 +32,7 @@ class DataModule(pl.LightningDataModule):
         train_subjs: Tuple[int, int] = TRAIN_SUBJECTS,
         val_subjs: Tuple[int, int] = VAL_SUBJECTS,
         test_subjs: Tuple[int, int] = TEST_SUBJECTS,
-        debug: Union[bool, int] = 2,
+        debug: Union[bool, int] = False,
     ):
         super().__init__()
         self.save_hyperparameters(ignore="debug")
